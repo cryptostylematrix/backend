@@ -1,5 +1,6 @@
 export type MatrixPlace = {
   address: string;
+  profile_addr: string;
   parent_address: string | null;
   place_number: number;
   created_at: number;
@@ -34,6 +35,7 @@ export type TreeFilledNode = {
 export type TreeEmptyNode = {
   kind: "empty";
   is_next_pos: boolean;
+  children?: [TreeNode | undefined, TreeNode | undefined];
 };
 
 export type TreeNode = TreeFilledNode | TreeEmptyNode;

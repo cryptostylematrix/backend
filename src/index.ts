@@ -1,22 +1,25 @@
 import express from "express";
-import {
-  MatrixPlace,
-  PaginatedPlaces,
-  TreeEmptyNode,
-  TreeFilledNode,
-  TreeNode,
-} from "./types/matrix";
-import {
-  MatrixStore,
-  PlacesResult,
-  PostgresMatrixStore,
-  StorePlace,
-} from "./store/postgresMatrixStore";
+import { Address } from "@ton/core";
+import { MatrixPlace, PaginatedPlaces, TreeEmptyNode, TreeFilledNode, TreeNode } from "./types/matrix";
+import { locksRepository, type LockRow } from "./repositories/locksRepository";
+import { placesRepository, type PlaceRow } from "./repositories/placesRepository";
+import { TaskProcessor } from "./services/taskProcessor";
+import { fetchPlaceData, fetchProfileContent } from "./services/contractsService";
+import { findNextPos } from "./services/nextPosService";
 
 
 const app = express();
 
 app.use(express.json());
+
+// Disable caching for all responses
+app.use((_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
 
 const allowedOrigins = [
   /^https?:\/\/localhost(:\d+)?$/i,
@@ -44,216 +47,65 @@ app.use((req, res, next) => {
   next();
 });
 
-const matrixStore: MatrixStore = new PostgresMatrixStore();
+const placesRepo = placesRepository;
+const locksRepo = locksRepository;
 
-const openapiSpec: Record<string, unknown> = {
-  openapi: "3.1.0",
-  info: {
-    title: "Matrix API",
-    description: "Fake MatrixService endpoints for local testing and prototyping.",
-    version: "1.0.0",
-  },
-  servers: [{ url: "http://localhost:3000" }],
-  paths: {
-    "/api/matrix/{m}/{profile_addr}/root": {
-      get: {
-        summary: "Get root place",
-        parameters: [
-          { name: "m", in: "path", required: true, schema: { type: "integer" } },
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-        ],
-        responses: {
-          200: { description: "Root place", content: { "application/json": { schema: { $ref: "#/components/schemas/MatrixPlace" } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/api/matrix/{m}/{profile_addr}/next-pos": {
-      get: {
-        summary: "Get next available position",
-        parameters: [
-          { name: "m", in: "path", required: true, schema: { type: "integer" } },
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-        ],
-        responses: {
-          200: { description: "Next position", content: { "application/json": { schema: { $ref: "#/components/schemas/MatrixPlace" } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/api/matrix/path": {
-      get: {
-        summary: "Get path from root to place",
-        parameters: [
-          { name: "root_addr", in: "query", required: true, schema: { type: "string" } },
-          { name: "place_addr", in: "query", required: true, schema: { type: "string" } },
-        ],
-        responses: {
-          200: { description: "Path array", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/MatrixPlace" } } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/api/matrix/{m}/{profile_addr}/places": {
-      get: {
-        summary: "List places",
-        parameters: [
-          { name: "m", in: "path", required: true, schema: { type: "integer" } },
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
-          { name: "pageSize", in: "query", schema: { type: "integer", default: 10 } },
-        ],
-        responses: {
-          200: { description: "Paginated places", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedPlaces" } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/api/matrix/{m}/{profile_addr}/places/count": {
-      get: {
-        summary: "Count places",
-        parameters: [
-          { name: "m", in: "path", required: true, schema: { type: "integer" } },
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-        ],
-        responses: {
-          200: { description: "Count", content: { "application/json": { schema: { type: "object", properties: { count: { type: "integer" } }, required: ["count"] } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/api/matrix/{m}/{profile_addr}/locks": {
-      get: {
-        summary: "List locks",
-        parameters: [
-          { name: "m", in: "path", required: true, schema: { type: "integer" } },
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
-          { name: "pageSize", in: "query", schema: { type: "integer", default: 10 } },
-        ],
-        responses: {
-          200: { description: "Paginated locks", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedPlaces" } } } },
-        },
-      },
-    },
-    "/api/matrix/{m}/{profile_addr}/search": {
-      get: {
-        summary: "Search places by address/login/index",
-        parameters: [
-          { name: "m", in: "path", required: true, schema: { type: "integer" } },
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-          { name: "query", in: "query", schema: { type: "string" } },
-          { name: "page", in: "query", schema: { type: "integer", default: 1 } },
-          { name: "pageSize", in: "query", schema: { type: "integer", default: 10 } },
-        ],
-        responses: {
-          200: { description: "Paginated search results", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedPlaces" } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/api/matrix/{profile_addr}/tree/{place_addr}": {
-      get: {
-        summary: "Get tree for a place",
-        parameters: [
-          { name: "profile_addr", in: "path", required: true, schema: { type: "string" } },
-          { name: "place_addr", in: "path", required: true, schema: { type: "string" } },
-        ],
-        responses: {
-          200: { description: "Tree node", content: { "application/json": { schema: { $ref: "#/components/schemas/TreeNode" } } } },
-          404: { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-  },
-  components: {
-    schemas: {
-      MatrixPlace: {
-        type: "object",
-        properties: {
-          id: { type: "integer" },
-          parent_id: { type: "integer", nullable: true },
-          address: { type: "string" },
-          parent_address: { type: "string", nullable: true },
-          place_number: { type: "integer" },
-          created_at: { type: "integer", description: "Unix ms" },
-          fill_count: { type: "integer" },
-          clone: { type: "integer", description: "1 means clone" },
-          pos: { type: "integer", enum: [0, 1] },
-          login: { type: "string" },
-          index: { type: "string" },
-          m: { type: "integer" },
-        },
-        required: ["id", "address", "place_number", "created_at", "fill_count", "clone", "pos", "login", "index", "m"],
-      },
-      PaginatedPlaces: {
-        type: "object",
-        properties: {
-          items: { type: "array", items: { $ref: "#/components/schemas/MatrixPlace" } },
-          page: { type: "integer" },
-          totalPages: { type: "integer" },
-        },
-        required: ["items", "page", "totalPages"],
-      },
-      TreeFilledNode: {
-        type: "object",
-        properties: {
-          kind: { type: "string", enum: ["filled"] },
-          locked: { type: "boolean" },
-          address: { type: "string" },
-          parent_address: { type: "string" },
-          descendants: { type: "integer" },
-          place_number: { type: "integer" },
-          clone: { type: "integer" },
-          created_at: { type: "integer" },
-          login: { type: "string" },
-          image_url: { type: "string" },
-          children: {
-            type: "array",
-            maxItems: 2,
-            minItems: 2,
-            items: { $ref: "#/components/schemas/TreeNode" },
-          },
-        },
-        required: ["kind", "locked", "address", "parent_address", "descendants", "place_number", "clone", "created_at", "login", "image_url"],
-      },
-      TreeEmptyNode: {
-        type: "object",
-        properties: {
-          kind: { type: "string", enum: ["empty"] },
-          is_next_pos: { type: "boolean" },
-        },
-        required: ["kind", "is_next_pos"],
-      },
-      TreeNode: {
-        oneOf: [{ $ref: "#/components/schemas/TreeFilledNode" }, { $ref: "#/components/schemas/TreeEmptyNode" }],
-      },
-    },
-    responses: {
-      NotFound: {
-        description: "Not found",
-        content: {
-          "application/json": {
-            schema: {
-              type: "object",
-              properties: { error: { type: "string" } },
-              required: ["error"],
-            },
-          },
-        },
-      },
-    },
-  },
+type Place = {
+  id: number;
+  parent_id: number | null;
+  address: string;
+  parent_address: string | null;
+  place_number: number;
+  created_at: number;
+  fill_count: number;
+  clone: number;
+  pos: 0 | 1;
+  login: string;
+  index: string;
+  m: number;
+  mp: string;
+  profile_addr: string;
 };
 
-const stripMp = (place: StorePlace): MatrixPlace => {
-  // Remove mp/id/parent_id before returning to clients
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { mp, id, parent_id, ...rest } = place;
+const toPlace = (row: PlaceRow): Place => ({
+  id: row.id,
+  parent_id: row.parent_id ?? null,
+  address: row.addr,
+  parent_address: row.parent_addr,
+  place_number: row.place_number,
+  created_at: row.craeted_at,
+  fill_count: row.filling2,
+  clone: row.clone,
+  pos: (row.pos as 0 | 1) ?? 0,
+  login: row.profile_login,
+  index: row.index,
+  m: row.m,
+  mp: row.mp,
+  profile_addr: row.profile_addr,
+});
+
+const mapLockRow = (
+  row: LockRow,
+): MatrixPlace=> ({
+  address: row.place_addr,
+  parent_address: row.place_parent_addr,
+  place_number: row.place_number,
+  created_at: row.craeted_at,
+  fill_count: 0,
+  clone: row.place_clone,
+  pos: row.place_pos as 0 | 1,
+  login: row.place_profile_login,
+  index: row.place_index,
+  m: row.m,
+  profile_addr: row.place_profile_addr,
+});
+
+const stripMp = (place: Place): MatrixPlace => {
+  const { mp: _mp, id: _id, parent_id: _parent_id, ...rest } = place;
   return rest;
 };
 
-const stripMpArray = (items: StorePlace[]): MatrixPlace[] => items.map(stripMp);
+const stripMpArray = (items: Place[]): MatrixPlace[] => items.map(stripMp);
 
 const buildPaginationPayload = (
   items: MatrixPlace[],
@@ -267,171 +119,17 @@ const buildPaginationPayload = (
   return { items, page: safePage, totalPages };
 };
 
-const findPlaces = (
-  m: number,
-  profile_addr: string,
-  page: number,
-  pageSize: number,
-) => matrixStore.getPlaces(m, profile_addr, page, pageSize);
-
-const findRoot = (places: MatrixPlace[]): MatrixPlace | undefined =>
-  places.find((place) => place.parent_address === null);
-
-const findNextPosition = (places: MatrixPlace[]): MatrixPlace | null => {
-  const childrenByParent = new Map<string, MatrixPlace[]>();
-  places.forEach((place) => {
-    if (!place.parent_address) {
-      return;
-    }
-
-    const children = childrenByParent.get(place.parent_address) ?? [];
-    children.push(place);
-    childrenByParent.set(place.parent_address, children);
-  });
-
-  const queue = places
-    .filter((place) => place.parent_address === null)
-    .sort((a, b) => a.created_at - b.created_at);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-
-    if (!current) {
-      continue;
-    }
-
-    const children = childrenByParent.get(current.address) ?? [];
-    if (children.length < 2) {
-      return current;
-    }
-
-    queue.push(...children.sort((a, b) => a.created_at - b.created_at));
-  }
-
-  return null;
-};
-
-const buildPath = (
-  places: MatrixPlace[],
-  root_addr: string,
-  place_addr: string,
-): MatrixPlace[] | null => {
-  const placeByAddress = new Map<string, MatrixPlace>(
-    places.map((place) => [place.address, place]),
-  );
-
-  const path: MatrixPlace[] = [];
-  let current = placeByAddress.get(place_addr);
-
-  while (current) {
-    path.push(current);
-
-    if (current.address === root_addr) {
-      return path.reverse();
-    }
-
-    if (!current.parent_address) {
-      break;
-    }
-
-    current = placeByAddress.get(current.parent_address);
-  }
-
-  return null;
-};
-
-const countDescendants = (
-  place: StorePlace,
-  childrenByKey: Map<number, StorePlace[]>,
-): number => {
-  const children = childrenByKey.get(place.id) ?? [];
-  return children.reduce(
-    (acc, child) => acc + 1 + countDescendants(child, childrenByKey),
-    0,
-  );
-};
-
-const buildTreeNode = (
-  place: StorePlace,
-  childrenByKey: Map<number, StorePlace[]>,
-  nextPosMarker: { marked: boolean },
-  isLocked: (place: StorePlace) => boolean,
-): TreeFilledNode => {
-  const children = childrenByKey.get(place.id) ?? [];
-  const left = children.find((child) => child.pos === 0);
-  const right = children.find((child) => child.pos === 1);
-
-  const makeEmpty = (): TreeEmptyNode => {
-    const is_next_pos = !nextPosMarker.marked;
-    if (!nextPosMarker.marked) {
-      nextPosMarker.marked = true;
-    }
-
-    return { kind: "empty", is_next_pos };
-  };
-
-  const childNodes: [TreeNode | undefined, TreeNode | undefined] = [
-    left ? buildTreeNode(left, childrenByKey, nextPosMarker, isLocked) : makeEmpty(),
-    right ? buildTreeNode(right, childrenByKey, nextPosMarker, isLocked) : makeEmpty(),
-  ];
-
-  const descendants = countDescendants(place, childrenByKey);
-
-  return {
-    kind: "filled",
-    locked: isLocked(place),
-    address: place.address,
-    parent_address: place.parent_address ?? "",
-    descendants,
-    place_number: place.place_number,
-    clone: place.clone,
-    created_at: place.created_at,
-    login: place.login,
-    image_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(place.login)}`,
-    children: childNodes,
-  };
-};
 
 app.get("/", (_req, res) => {
-  res.send("API is working!");
-});
-
-app.get("/openapi.json", (_req, res) => {
-  res.json(openapiSpec);
-});
-
-app.get("/docs", (_req, res) => {
-  res.type("html").send(`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Matrix API Docs</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
-    <style>
-      body { margin: 0; }
-      #swagger-ui { height: 100vh; }
-    </style>
-  </head>
-  <body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
-    <script>
-      window.onload = () => {
-        SwaggerUIBundle({
-          url: "/openapi.json",
-          dom_id: "#swagger-ui",
-          presets: [SwaggerUIBundle.presets.apis],
-        });
-      };
-    </script>
-  </body>
-</html>`);
+  res.send("API is well working!");
 });
 
 app.get("/api/matrix/:m/:profile_addr/root", async (req, res) => {
+
   const m = Number(req.params.m);
   const { profile_addr } = req.params;
-  const root = await matrixStore.getRootPlace(m, profile_addr);
+  const rootRow = await placesRepo.getRootPlace(m, profile_addr);
+  const root = rootRow ? toPlace(rootRow) : null;
 
   if (!root) {
     return res.status(404).json({ error: "Root place not found" });
@@ -443,36 +141,17 @@ app.get("/api/matrix/:m/:profile_addr/root", async (req, res) => {
 app.get("/api/matrix/:m/:profile_addr/next-pos", async (req, res) => {
   const m = Number(req.params.m);
   const { profile_addr } = req.params;
-  const root = await matrixStore.getRootPlace(m, profile_addr);
-  if (!root) {
+  const rootRow = await placesRepo.getRootPlace(m, profile_addr);
+  if (!rootRow) {
     return res.status(404).json({ error: "Root place not found" });
   }
 
-  const openPlaces = await matrixStore.getOpenPlacesByMpPrefix(
-    m,
-    (root as StorePlace).mp,
-    1,
-    1,
-  );
-  const places = openPlaces.items as StorePlace[];
-
-  const locks = await matrixStore.getLocks(m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
-  const lockMps = locks.items
-    .map((lock) => (lock as StorePlace).mp)
-    .filter((mp): mp is string => typeof mp === "string" && mp.length > 0);
-
-  const candidates = places.filter(
-    (place) => place.mp && !lockMps.some((lockMp) => place.mp.startsWith(lockMp)),
-  );
-
-  if (candidates.length === 0) {
+  const nextPosRow = await findNextPos(rootRow);
+  if (!nextPosRow) {
     return res.status(404).json({ error: "Next position not found" });
   }
 
-  candidates.sort((a, b) => a.mp.length - b.mp.length || a.mp.localeCompare(b.mp));
-  const nextPos = candidates[0];
-
-  res.json(stripMp(nextPos));
+  return res.json(stripMp(toPlace(nextPosRow)));
 });
 
 app.get("/api/matrix/path", async (req, res) => {
@@ -489,8 +168,10 @@ app.get("/api/matrix/path", async (req, res) => {
     return res.status(400).json({ error: "m and profile_addr are required" });
   }
 
-  const rootPlace = (await matrixStore.getPlaceByAddress(root_addr)) as StorePlace | null;
-  const targetPlace = (await matrixStore.getPlaceByAddress(place_addr)) as StorePlace | null;
+  const rootPlaceRow = await placesRepo.getPlaceByAddress(root_addr);
+  const targetPlaceRow = await placesRepo.getPlaceByAddress(place_addr);
+  const rootPlace = rootPlaceRow ? toPlace(rootPlaceRow) : null;
+  const targetPlace = targetPlaceRow ? toPlace(targetPlaceRow) : null;
 
   if (!rootPlace || !rootPlace.mp) {
     return res.status(404).json({ error: "Root place not found" });
@@ -513,11 +194,12 @@ app.get("/api/matrix/path", async (req, res) => {
   const shortPlace = rootIsAncestor ? rootPlace : targetPlace;
   const longPlace = rootIsAncestor ? targetPlace : rootPlace;
 
-  const path: StorePlace[] = [];
+  const path: Place[] = [];
   let currentMp = longPlace.mp;
 
   while (true) {
-    const current = await matrixStore.getPlaceByMp(m, currentMp);
+    const currentRow = await placesRepo.getPlaceByMp(m, currentMp);
+    const current = currentRow ? toPlace(currentRow) : null;
     if (!current) {
       return res.status(404).json({ error: "Path not found" });
     }
@@ -540,18 +222,16 @@ app.get("/api/matrix/:m/:profile_addr/places", async (req, res) => {
   const { profile_addr } = req.params;
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 10);
-  const placesResult = await findPlaces(m, profile_addr, page, pageSize);
+  const placesResult = await placesRepo.getPlaces(m, profile_addr, page, pageSize);
+
+
 
   if (!placesResult) {
     return res.status(404).json({ error: "Matrix not found" });
   }
 
-  const payload = buildPaginationPayload(
-    stripMpArray(placesResult.items as StorePlace[]),
-    placesResult.total,
-    page,
-    pageSize,
-  );
+  const normalized = placesResult.items.map(toPlace);
+  const payload = buildPaginationPayload(stripMpArray(normalized), placesResult.total, page, pageSize);
 
   res.json(payload);
 });
@@ -559,7 +239,7 @@ app.get("/api/matrix/:m/:profile_addr/places", async (req, res) => {
 app.get("/api/matrix/:m/:profile_addr/places/count", async (req, res) => {
   const m = Number(req.params.m);
   const { profile_addr } = req.params;
-  const count = await matrixStore.getPlacesCount(m, profile_addr);
+  const count = await placesRepo.getPlacesCount(m, profile_addr);
   if (count === 0) {
     return res.status(404).json({ error: "Matrix not found" });
   }
@@ -570,7 +250,7 @@ app.get("/api/matrix/:m/:profile_addr/places/count", async (req, res) => {
 app.get("/api/matrix/:m/:profile_addr/locks", async (req, res) => {
   const m = Number(req.params.m);
   const { profile_addr } = req.params;
-  const locks = await matrixStore.getLocks(
+  const locksResult = await locksRepo.getLocks(
     m,
     profile_addr,
     Number(req.query.page ?? 1),
@@ -580,10 +260,37 @@ app.get("/api/matrix/:m/:profile_addr/locks", async (req, res) => {
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 10);
 
-  const payload = buildPaginationPayload(locks.items, locks.total, page, pageSize);
+  const lockItems = locksResult.items.map((lock) => mapLockRow(lock));
+  const payload = buildPaginationPayload(lockItems, locksResult.total, page, pageSize);
 
   res.json(payload);
 });
+
+const buildFilldTreeNode = async (
+  placeRow: PlaceRow,
+  isLockedByPrefix: (place: PlaceRow) => boolean,
+  children: [TreeNode | undefined, TreeNode | undefined] | undefined,
+): Promise<TreeFilledNode> => {
+  const [rootProfileData, placesCount] = await Promise.all([
+    fetchProfileContent(Address.parse(placeRow.profile_addr)),
+    placesRepo.getPlacesCountByMpPrefix(placeRow.m, placeRow.mp),
+  ]);
+  const descendants = Math.max(0, placesCount - 1); // exclude the current node from descendant count
+
+  return {
+    kind: "filled",
+    locked: isLockedByPrefix(placeRow),
+    address: placeRow.addr,
+    parent_address: placeRow.parent_addr ?? "",
+    descendants,
+    place_number: placeRow.place_number,
+    clone: placeRow.clone,
+    created_at: placeRow.craeted_at,
+    login: placeRow.profile_login,
+    image_url: rootProfileData?.imageUrl ?? "",
+    children,
+  };
+};
 
 app.get("/api/matrix/:m/:profile_addr/search", async (req, res) => {
   const m = Number(req.params.m);
@@ -592,80 +299,154 @@ app.get("/api/matrix/:m/:profile_addr/search", async (req, res) => {
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 10);
 
-  const placesResult = await matrixStore.searchPlaces(m, profile_addr, query, page, pageSize);
+  const placesResult = await placesRepo.searchPlaces(m, profile_addr, query, page, pageSize);
   if (!placesResult) {
     return res.status(404).json({ error: "Matrix not found" });
   }
 
-  const payload = buildPaginationPayload(
-    stripMpArray(placesResult.items as StorePlace[]),
-    placesResult.total,
-    page,
-    pageSize,
-  );
+  const normalized = placesResult.items.map(toPlace);
+  const payload = buildPaginationPayload(stripMpArray(normalized), placesResult.total, page, pageSize);
   res.json(payload);
 });
 
 app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
   const { profile_addr, place_addr } = req.params;
 
-  const rootPlace = await matrixStore.getPlaceByAddress(place_addr);
-  if (!rootPlace || !rootPlace.mp || rootPlace.m === undefined || rootPlace.m === null) {
+  const rootRow = await placesRepo.getPlaceByAddress(place_addr);
+  if (!rootRow) {
     return res.status(404).json({ error: "Place not found" });
   }
 
-  const subtreePlaces = await matrixStore.getPlacesByMpPrefix(
-    rootPlace.m,
-    rootPlace.mp,
+  const nextPosRow = await findNextPos(rootRow);
+  if (!nextPosRow) {
+    return res.status(404).json({ error: "Next position not found" });
+  }
+
+  const locksResult = await locksRepo.getLocks(rootRow.m, rootRow.profile_addr, 1, Number.MAX_SAFE_INTEGER);
+  const lockMps = locksResult.items
+    .map((lock) => lock.mp)
+    .filter((mp): mp is string => typeof mp === "string" && mp.length > 0);
+
+  const isLockedByPrefix = (place: PlaceRow): boolean =>
+    lockMps.some((lockMp) => place.mp.startsWith(lockMp));
+
+
+
+  const subtreePlaces = await placesRepo.getPlacesByMpPrefix(
+    rootRow.m,
+    rootRow.mp,
     2,
     1,
     Number.MAX_SAFE_INTEGER,
   );
 
-  const childrenByKey = new Map<number, StorePlace[]>();
-  subtreePlaces.items.forEach((place: StorePlace) => {
-    if (place.parent_id === null || place.parent_id === undefined) {
-      return;
+  
+  
+
+  const left = subtreePlaces.items.find((p) => p.parent_id == rootRow.id && p.pos == 0);
+  const right = subtreePlaces.items.find((p) => p.parent_id == rootRow.id && p.pos == 1);
+
+  let leftNode: TreeNode;
+  let leftLeftNode: TreeNode;
+  let leftRightNode: TreeNode;
+
+  if (!left) {
+      leftLeftNode = { kind: "empty" , is_next_pos: false};
+      leftRightNode = { kind: "empty" , is_next_pos: false};
+
+      leftNode = {
+        kind: "empty",
+        is_next_pos: nextPosRow.id == rootRow.id && rootRow.filling == 0,
+        children: [ leftLeftNode, leftRightNode ]
+      };
+    }
+    else
+    {
+      const leftLeft = subtreePlaces.items.find((p) => p.parent_id == left.id && p.pos == 0);
+      leftLeftNode = leftLeft
+        ? await buildFilldTreeNode(leftLeft, isLockedByPrefix, undefined)
+        : { kind: "empty", is_next_pos: (nextPosRow.id == left.id && nextPosRow.filling == 0) };
+
+      const leftRight = subtreePlaces.items.find((p) => p.parent_id == left.id && p.pos == 1);
+      leftRightNode = leftRight
+        ? await buildFilldTreeNode(leftRight, isLockedByPrefix, undefined)
+        : { kind: "empty", is_next_pos: nextPosRow.id == left.id && nextPosRow.filling == 1 };
+
+      leftNode = await buildFilldTreeNode(left!, isLockedByPrefix, [leftLeftNode, leftRightNode]);
     }
 
-    const parentKey = place.parent_id;
-    const list = childrenByKey.get(parentKey) ?? [];
-    list.push(place);
-    childrenByKey.set(parentKey, list);
-  });
+    let rightNode: TreeNode;
+    let righttLeftNode: TreeNode;
+    let rightRightNode: TreeNode;
 
-  for (const [key, list] of childrenByKey.entries()) {
-    const byPos = new Map<number, StorePlace>();
-    list.forEach((child) => {
-      if (!byPos.has(child.pos)) {
-        byPos.set(child.pos, child);
-      }
-    });
+    if (!right) {
+      righttLeftNode = { kind: "empty" , is_next_pos: false};
+      rightRightNode = { kind: "empty" , is_next_pos: false};
 
-    const deduped = Array.from(byPos.values());
-    deduped.sort((a: StorePlace, b: StorePlace) => a.pos - b.pos);
-    childrenByKey.set(key, deduped);
-  }
+      rightNode = {
+        kind: "empty",
+        is_next_pos: nextPosRow.id == rootRow.id && rootRow.filling == 1,
+        children: [ righttLeftNode, rightRightNode ]
+      };
+    }
+    else
+    {
+      const rightLeft = subtreePlaces.items.find((p) => p.parent_id == right.id && p.pos == 0);
+      righttLeftNode = rightLeft
+        ? await buildFilldTreeNode(rightLeft, isLockedByPrefix, undefined)
+        : { kind: "empty", is_next_pos: (nextPosRow.id == right.id && nextPosRow.filling == 0) };
 
-  const locks = await matrixStore.getLocks(rootPlace.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
-  const lockMps = locks.items
-    .map((lock) => (lock as StorePlace).mp)
-    .filter((mp): mp is string => typeof mp === "string" && mp.length > 0);
+      const rightRight = subtreePlaces.items.find((p) => p.parent_id == right.id && p.pos == 1);
+      rightRightNode = rightRight
+        ? await buildFilldTreeNode(rightRight, isLockedByPrefix, undefined)
+        : { kind: "empty", is_next_pos: nextPosRow.id == right.id && nextPosRow.filling == 1 };
 
-  const isLockedByPrefix = (place: StorePlace): boolean =>
-    lockMps.some((lockMp) => place.mp.startsWith(lockMp));
+      rightNode = await buildFilldTreeNode(right!, isLockedByPrefix, [righttLeftNode, rightRightNode]);
+    }
 
-  const tree = buildTreeNode(
-    rootPlace as StorePlace,
-    childrenByKey,
-    { marked: false },
-    isLockedByPrefix,
-  );
 
-  res.json(tree);
+
+  const rootTreeNode = await buildFilldTreeNode(rootRow, isLockedByPrefix, [leftNode, rightNode]);
+
+
+  res.json(rootTreeNode);
 });
+
+app.get("/tonapi/place-data/:place_addr", async (req, res) => {
+  const { place_addr } = req.params;
+
+  try {
+    const data = await fetchPlaceData(place_addr);
+    console.log(data);
+
+    console.log(`[Test][fetchPlaceData] ${place_addr}: ${data ? "ok" : "empty"}`);
+
+    if (!data) {
+      return res.status(404).json({ error: "Place data not found" });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error(`Failed to fetch place data for ${place_addr}:`, error);
+    res.status(400).json({ error: "Invalid place address or fetch failed" });
+  }
+});
+
+// Global error handler to surface uncaught route errors
+app.use(
+  (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("Unhandled error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  },
+);
+
+// const taskProcessor = new TaskProcessor();
+// void taskProcessor.run();
+
 
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => {
+
+
   console.log(`Server running at http://localhost:${PORT}`);
 });
