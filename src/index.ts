@@ -440,13 +440,11 @@ app.use(
   },
 );
 
+
 // const taskProcessor = new TaskProcessor();
 // void taskProcessor.run();
 
-
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => {
-
-
   console.log(`Server running at http://localhost:${PORT}`);
 });

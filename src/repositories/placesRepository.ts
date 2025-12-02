@@ -28,6 +28,7 @@ export type PlaceRow = {
   pos: number;
   addr: string;
   profile_addr: string;
+  inviter_profile_addr: string | null;
   parent_addr: string | null;
   place_number: number;
   craeted_at: number;
@@ -72,7 +73,7 @@ class PlacesRepository {
     }
 
     const query = {
-      text: `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      text: `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
              FROM multi_places
              WHERE m = $1 AND profile_addr = $2
              ORDER BY place_number ASC
@@ -90,7 +91,7 @@ class PlacesRepository {
 
   async getRootPlace(m: number, profile_addr: string): Promise<PlaceRow | null> {
     const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
        FROM multi_places
        WHERE m = $1 AND profile_addr = $2 AND place_number = 1
        LIMIT 1`,
@@ -102,7 +103,7 @@ class PlacesRepository {
 
   async getPlaceByTaskKey(task_key: number): Promise<PlaceRow | null> {
     const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
        FROM multi_places
        WHERE task_key = $1
        LIMIT 1`,
@@ -133,9 +134,9 @@ class PlacesRepository {
     const query = `UPDATE multi_places
        SET addr = $1, confirmed = TRUE
        WHERE id = $2
-       RETURNING id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index`;
+       RETURNING id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index`;
     const values = [address, id];
-    console.log("[PlacesRepository] updatePlaceAddressAndConfirm SQL:", query, "values:", values);
+    //console.log("[PlacesRepository] updatePlaceAddressAndConfirm SQL:", query, "values:", values);
 
     const result = await this.client.query<PlaceRow>(query, values);
     const row = result.rows[0];
@@ -174,7 +175,7 @@ class PlacesRepository {
     const safePage = page > 0 ? page : 1;
     const safePageSize = pageSize > 0 ? pageSize : 10;
     const queryConfig = {
-      text: `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      text: `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
              FROM multi_places
              WHERE m = $1 AND mp LIKE $2 AND index LIKE $3
              ORDER BY index ASC
@@ -188,7 +189,7 @@ class PlacesRepository {
 
   async getPlaceByAddress(place_addr: string): Promise<PlaceRow | null> {
     const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
        FROM multi_places
        WHERE addr = $1
        LIMIT 1`,
@@ -237,7 +238,7 @@ class PlacesRepository {
     }
 
     const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
        FROM multi_places
        WHERE m = $1 AND mp LIKE $2 AND length(mp) <= $3
        ORDER BY length(mp) ASC, mp ASC
@@ -250,7 +251,7 @@ class PlacesRepository {
 
   async getPlaceByMp(m: number, mp: string): Promise<PlaceRow | null> {
     const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
        FROM multi_places
        WHERE m = $1 AND mp = $2
        LIMIT 1`,
@@ -282,7 +283,7 @@ class PlacesRepository {
     }
 
     const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
+      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
        FROM multi_places
        WHERE m = $1 AND mp LIKE $2 AND filling < 2
        ORDER BY length(mp) ASC, mp ASC
@@ -305,7 +306,7 @@ class PlacesRepository {
               task_key, task_query_id, task_source_addr, inviter_profile_addr, confirmed
              )
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 0, $10, $11, $12, $13, $14, $15, $16, $17)
-             RETURNING id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index`,
+             RETURNING id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index`,
       values: [
         place.m,
         place.profile_addr,
