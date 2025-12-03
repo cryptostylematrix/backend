@@ -6,17 +6,6 @@ services:
     ports:
       - "80:${PORT:-3000}"
     restart: unless-stopped
-
-
-
-services:
-  app:
-    build: .
-    env_file:
-      - .env
-    ports:
-      - "80:${PORT:-3000}"
-    restart: unless-stopped
     depends_on:
       - seq                        # <-- make sure Seq starts first
     environment:
