@@ -1,6 +1,7 @@
 import { Cell, Dictionary } from "@ton/core";
 import { sha256_sync } from "@ton/crypto";
 import { NFTDictValueSerializer } from "./dict";
+import { logger } from "../logger";
 
 export type ProfileData = {
   login: string;
@@ -92,7 +93,7 @@ export const parseProfileFromNftContent = (
       }
     }
   } catch (error) {
-    console.error("getProfile error:", error);
+    logger.error(`getProfile error: ${error}`);
     return null;
   }
 

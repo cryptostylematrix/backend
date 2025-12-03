@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { dbConfig } from "../config";
+import { logger } from "../logger";
 
 const createPool = (): Pool => {
   const pool = new Pool({
@@ -16,14 +17,14 @@ const createPool = (): Pool => {
   pool
     .query("SELECT 1")
     .then(() => {
-      console.log("PostgreSQL pool connected");
+      logger.info("PostgreSQL pool connected");
     })
     .catch((err) => {
-      console.error("PostgreSQL pool connection failed:", err);
+      logger.error("PostgreSQL pool connection failed:", err);
     });
 
   pool.on("error", (err) => {
-    console.error("Unexpected PostgreSQL pool error:", err);
+    logger.error("Unexpected PostgreSQL pool error:", err);
   });
 
   return pool;

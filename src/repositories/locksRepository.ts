@@ -1,5 +1,6 @@
 import { type Pool } from "pg";
 import { pool } from "./db";
+import { logger } from "../logger";
 
 export type LockRow = {
   id: number;
@@ -158,7 +159,7 @@ class LocksRepository {
           place_index,
           place_pos`;
     const values = [id];
-    //console.log("[LockRepository] updateLockConfirm SQL:", query, "values:", values);
+    //logger.info("[LockRepository] updateLockConfirm SQL:", query, "values:", values);
 
     const result = await this.client.query<LockRow>(query, values);
     const row = result.rows[0];

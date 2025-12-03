@@ -6,6 +6,8 @@ import { placesRepository, type PlaceRow } from "./repositories/placesRepository
 import { TaskProcessor } from "./services/taskProcessor";
 import { fetchPlaceData, fetchProfileContent } from "./services/contractsService";
 import { findNextPos } from "./services/nextPosService";
+import { appConfig } from "./config";
+import { logger } from "./logger";
 
 
 const app = express();
@@ -414,37 +416,28 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
 
 app.get("/tonapi/place-data/:place_addr", async (req, res) => {
   const { place_addr } = req.params;
+ const data = await fetchPlaceData(place_addr);
 
-  try {
-    const data = await fetchPlaceData(place_addr);
-    console.log(data);
-
-    console.log(`[Test][fetchPlaceData] ${place_addr}: ${data ? "ok" : "empty"}`);
 
     if (!data) {
       return res.status(404).json({ error: "Place data not found" });
     }
 
     res.json(data);
-  } catch (error) {
-    console.error(`Failed to fetch place data for ${place_addr}:`, error);
-    res.status(400).json({ error: "Invalid place address or fetch failed" });
-  }
 });
 
 // Global error handler to surface uncaught route errors
 app.use(
   (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error("Unhandled error:", err);
+    logger.error(`Unhandled error: ${err}`);
     res.status(500).json({ error: "Internal server error" });
   },
 );
 
 
-// const taskProcessor = new TaskProcessor();
-// void taskProcessor.run();
+const taskProcessor = new TaskProcessor();
+void taskProcessor.run();
 
-const PORT = Number(process.env.PORT || 3000);
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+app.listen(appConfig.port, () => {
+  logger.info(`Server running at http://localhost:${appConfig.port}`);
 });

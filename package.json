@@ -25,8 +25,10 @@
     "@ton/crypto": "^3.3.0",
     "@ton/ton": "^16.0.0",
     "@types/pg": "^8.15.6",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "seq-logging": "^3.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",

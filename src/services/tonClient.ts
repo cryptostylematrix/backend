@@ -1,5 +1,6 @@
 import { TonClient } from "@ton/ton";
 import { tonConfig } from "../config";
+import { logger } from "../logger";
 
 let tonClient: TonClient | null = null;
 
@@ -13,7 +14,7 @@ export const getTonClient = (): TonClient => {
 
   tonClient = new TonClient({ endpoint, apiKey });
 
-  console.log(`[TaskProcessor] TON client initialized for endpoint ${endpoint}`);
+  logger.info(`[TaskProcessor] TON client initialized for endpoint ${endpoint}`);
 
   return tonClient;
 };

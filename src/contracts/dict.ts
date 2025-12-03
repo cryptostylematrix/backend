@@ -11,8 +11,7 @@ interface NFTDictValue {
 
 export const ChunkDictValueSerializer = {
     serialize(src: ChunkDictValue, builder: Builder) { 
-        console.log(src);
-        console.log(builder);
+
     },
     parse(src: Slice): ChunkDictValue {
         const snake = flattenSnakeCell(src.loadRef());
@@ -22,8 +21,7 @@ export const ChunkDictValueSerializer = {
 
 export const NFTDictValueSerializer = {
     serialize(src: NFTDictValue, builder: Builder) { 
-        console.log(src);
-        console.log(builder);
+
     },
     parse(src: Slice): NFTDictValue {
 

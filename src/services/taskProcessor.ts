@@ -16,11 +16,11 @@ import {
 } from "./contractsService";
 import { findNextPos } from "./nextPosService";
 import { LockRow, locksRepository, NewLock } from "../repositories/locksRepository";
+import { logger } from "../logger";
+
 
 // Single multi queue address from env or config
 const WATCHED_MULTI_ADDRESS: string = tonConfig.multiQueueAddress;
-
-
 
 
 export class TaskProcessor {
@@ -32,7 +32,7 @@ export class TaskProcessor {
       return;
     }
 
-    console.log(`TaskProcessor: scheduling every 2 seconds for multi ${WATCHED_MULTI_ADDRESS || "<none>"}.`);
+    logger.info(`TaskProcessor: scheduling every 2 seconds for multi ${WATCHED_MULTI_ADDRESS || "<none>"}.`);
 
     const runOnce = async (): Promise<void> => {
       if (this.running) {
@@ -46,7 +46,7 @@ export class TaskProcessor {
           return;
         }
       } catch (error) {
-        console.error("TaskProcessor run failed:", error);
+        logger.error(`TaskProcessor run failed: ${error}`);
         this.timer = null;
         return;
       } finally {
@@ -73,7 +73,7 @@ export class TaskProcessor {
      
       const lastTask = await fetchLastTask(rawMultiAddress);
       if (!lastTask || lastTask.flag == 0) {
-        console.log(`[TaskProcessor] last: <empty>`);
+        logger.info(`[TaskProcessor] last: <empty>`);
         return true;
       }
 
@@ -88,7 +88,7 @@ export class TaskProcessor {
         if (payload.tag === 1) {
           const createPlacePayload = payload as MultiTaskCreatePlacePayload;
           if (createPlacePayload.pos !== null) {
-            console.error(`[TaskProcessor] skipping create_place with set pos for task key=${taskKey}`);
+            logger.error(`[TaskProcessor] skipping create_place with set pos for task key=${taskKey}`);
             return false;
           }
         }
@@ -96,27 +96,27 @@ export class TaskProcessor {
         // stop if key exists in db
         const existing = await placesRepository.getPlaceByTaskKey(taskKey);
         if (existing) {
-          console.error(`[TaskProcessor] skipping task key=${taskKey} because place already exists`);
+          logger.error(`[TaskProcessor] skipping task key=${taskKey} because place already exists`);
           return false;
         }
 
         // get root place
         const rootPlace = await this.findRootPlace(taskVal.m, taskVal.profile);
         if (!rootPlace) {
-          console.error(`[TaskProcessor] unable to resolve root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}, task key=${taskKey})`);
+          logger.error(`[TaskProcessor] unable to resolve root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}, task key=${taskKey})`);
           return false;
         }
 
-        console.log(`[TaskProcessor] resolved root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address = ${rootPlace.addr}`);
+        logger.info(`[TaskProcessor] resolved root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address = ${rootPlace.addr}`);
 
         // get next pos
         const nextPos = await findNextPos(rootPlace);
         if (!nextPos) {
-          console.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
+          logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
           return false;
         }
 
-        console.log(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
+        logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
 
 
         // get parent data BEFORE adding the child
@@ -138,18 +138,19 @@ export class TaskProcessor {
         const parentAddress = Address.parse(nextPos.addr);
         const deployBody = Multi.deployPlaceMessage(taskKey, parentAddress, profiles, taskVal.query_id);
         await sendPaymentToMulti(rawMultiAddress, taskKey, deployBody, toNano("0.5"));
+        logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
 
         // waif until new place data appears
         const newChildAddr = await waitForNewChild(nextPos.addr, parentDataBefore);
         if (!newChildAddr)
         {
-            console.error(`[TaskProcessor] could not get the new child's data of parent ${nextPos.addr}`);
+            logger.error(`[TaskProcessor] could not get the new child's data of parent ${nextPos.addr}`);
             return false;
         }
 
         // confirm data in db
         await placesRepository.updatePlaceAddressAndConfirm(createResult.id, newChildAddr!);
-        console.log(`[TaskProcessor] updated place #${createResult.id} with on-chain address ${newChildAddr} and confirmed`);
+        logger.info(`[TaskProcessor] updated place #${createResult.id} with on-chain address ${newChildAddr} and confirmed`);
       }
 
       else if (taskVal.payload.tag === 3) {
@@ -211,7 +212,7 @@ export class TaskProcessor {
           await this.cancelTask(rawMultiAddress, taskKey, taskVal);
        
           await locksRepository.updateLockConfirm(createResult.id);
-          console.log(`[TaskProcessor] updated lock #${createResult.id} with confirmed`);
+          logger.info(`[TaskProcessor] updated lock #${createResult.id} with confirmed`);
       }
 
       else if (taskVal.payload.tag === 4) {
@@ -253,21 +254,21 @@ export class TaskProcessor {
 
           await locksRepository.removeLock(lock.id);
 
-          console.log(`[TaskProcessor] removed lock #${lock.id}`);
+          logger.info(`[TaskProcessor] removed lock #${lock.id}`);
           
       }
       else 
       {
-        console.error(`[TaskProcessor] unsupported tag (key = ${taskKey})`);
+        logger.error(`[TaskProcessor] unsupported tag (key = ${taskKey})`);
         return false;
       }
 
-      console.log(`[TaskProcessor] last task key=${taskKey} successfully processed`);
-      console.log('');
+      logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+      logger.info('');
       return true;
 
     } catch (error) {
-      console.error(`[TaskProcessor] failed to process last task`, error);
+      logger.error(`[TaskProcessor] failed to process last task: ${error}`);
       return false;
     }
   }
@@ -276,19 +277,20 @@ export class TaskProcessor {
   {
       const cancelBody = Multi.cancelTaskMsg(taskKey, taskVal.query_id);
       await sendPaymentToMulti(rawMultiAddress, taskKey, cancelBody, toNano("0.5"));
+      logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
       await waitForTaskCanceled(rawMultiAddress, taskKey);
   }
 
   private logLockErr(err: string, taskKey: number, taskVal: MultiTaskItem)
   {
     const lockPosPayload = taskVal.payload as MultiTaskLockPosPayload;
-    console.error(`[TaskProcessor] [lock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
+    logger.error(`[TaskProcessor] [lock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
   }
 
   private logUnlockErr(err: string, taskKey: number, taskVal: MultiTaskItem)
   {
     const lockPosPayload = taskVal.payload as MultiTaskUnlockPosPayload;
-    console.error(`[TaskProcessor] [unlock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
+    logger.error(`[TaskProcessor] [unlock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
   }
 
   private toFriendly(address: Address): string {
@@ -308,7 +310,7 @@ export class TaskProcessor {
     // get profile of the inviter
     const inviterProfile = await fetchInviterProfileAddr(profileAddr);
     if (!inviterProfile) {
-      console.error(`[TaskProcessor] profile ${profileAddr} has not chosen inviter yet`);
+      logger.error(`[TaskProcessor] profile ${profileAddr} has not chosen inviter yet`);
       return null;
     }
 
@@ -360,7 +362,7 @@ export class TaskProcessor {
     if (nextPos.parent_id !== null && nextPos.parent_id !== undefined) {
       await placesRepository.incrementFilling2(nextPos.parent_id);
     }
-    console.log(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${nextPos.addr}`);
+    logger.info(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${nextPos.addr}`);
     return result;
   }
 
@@ -393,7 +395,7 @@ export class TaskProcessor {
     };
 
     const result = await locksRepository.addLock(newLock);
-    console.log(`[TaskProcessor] [lock_pos] created lock for profile ${newLock.profile_addr}: place=${newLock.place_addr}`);
+    logger.info(`[TaskProcessor] [lock_pos] created lock for profile ${newLock.profile_addr}: place=${newLock.place_addr}`);
     return result;
   }
 }

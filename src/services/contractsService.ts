@@ -69,7 +69,6 @@ export const fetchLastTask = async (rawMultiAddress: string): Promise<MinQueueTa
   return lastTask;
 };
 
-
 export const fetchProfileContent = async (profileAddr: Address): Promise<ProfileData | null> => {
   const client = getTonClient();
   const profile = ProfileItemV1.createFromAddress(profileAddr);
@@ -186,9 +185,7 @@ export const sendPaymentToMulti = async (
 
   await waitForSeqno(openedWallet, seqno);
   lastPaidTaskKey = taskKey;
-  console.log(
-    `[TaskProcessor][queue] sent ${Number(value) / 1e9} TON from processor wallet ${wallet.address.toString({ urlSafe: true, bounceable: true, testOnly: false })} to ${toAddress} for task key=${taskKey}`,
-  );
+ 
 };
 
 
