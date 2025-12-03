@@ -435,8 +435,11 @@ app.use(
 );
 
 
-const taskProcessor = new TaskProcessor();
-void taskProcessor.run();
+if (process.env.NODE_ENV === "production") {
+  const taskProcessor = new TaskProcessor();
+  void taskProcessor.run();
+}
+
 
 app.listen(appConfig.port, () => {
   logger.info(`Server running at http://localhost:${appConfig.port}`);
