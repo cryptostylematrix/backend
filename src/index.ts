@@ -267,6 +267,8 @@ app.get("/api/matrix/:m/:profile_addr/locks", async (req, res) => {
 
 const buildFilldTreeNode = async (
   placeRow: PlaceRow,
+  siblingRow: PlaceRow | undefined | null,
+  rootRow: PlaceRow,
   isLockedByPrefix: (place: PlaceRow) => boolean,
   children: [TreeNode | undefined, TreeNode | undefined] | undefined,
 ): Promise<TreeFilledNode> => {
@@ -276,9 +278,22 @@ const buildFilldTreeNode = async (
   ]);
   const descendants = Math.max(0, placesCount - 1); // exclude the current node from descendant count
 
+  const is_root = placeRow.id == rootRow.id;
+  let is_locked = isLockedByPrefix(placeRow);
+  let can_be_locked = !is_locked;
+  if (can_be_locked)
+  {
+    if (is_root || (siblingRow && isLockedByPrefix(siblingRow)))
+    {
+      can_be_locked = false;
+    }
+  }
+
   return {
     kind: "filled",
-    locked: isLockedByPrefix(placeRow),
+    locked: is_locked,
+    can_be_locked: can_be_locked,
+    is_root: is_root,
     address: placeRow.addr,
     parent_address: placeRow.parent_addr ?? "",
     descendants,
@@ -311,17 +326,23 @@ app.get("/api/matrix/:m/:profile_addr/search", async (req, res) => {
 app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
   const { profile_addr, place_addr } = req.params;
 
-  const rootRow = await placesRepo.getPlaceByAddress(place_addr);
-  if (!rootRow) {
+  const selectedRow = await placesRepo.getPlaceByAddress(place_addr);
+  if (!selectedRow) {
     return res.status(404).json({ error: "Place not found" });
   }
 
-  const nextPosRow = await findNextPos(rootRow);
+  const rootRow = await placesRepo.getRootPlace(selectedRow.m, profile_addr);
+  if (!rootRow)
+  {
+    return res.status(404).json({ error: "Root not found" });
+  }
+
+  const nextPosRow = await findNextPos(selectedRow);
   if (!nextPosRow) {
     return res.status(404).json({ error: "Next position not found" });
   }
 
-  const locksResult = await locksRepo.getLocks(rootRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
+  const locksResult = await locksRepo.getLocks(selectedRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
   const lockMps = locksResult.items
     .map((lock) => lock.mp)
     .filter((mp): mp is string => typeof mp === "string" && mp.length > 0);
@@ -332,18 +353,17 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
 
 
   const subtreePlaces = await placesRepo.getPlacesByMpPrefix(
-    rootRow.m,
-    rootRow.mp,
+    selectedRow.m,
+    selectedRow.mp,
     2,
     1,
     Number.MAX_SAFE_INTEGER,
   );
 
   
-  
 
-  const left = subtreePlaces.items.find((p) => p.parent_id == rootRow.id && p.pos == 0);
-  const right = subtreePlaces.items.find((p) => p.parent_id == rootRow.id && p.pos == 1);
+  const left = subtreePlaces.items.find((p) => p.parent_id == selectedRow.id && p.pos == 0);
+  const right = subtreePlaces.items.find((p) => p.parent_id == selectedRow.id && p.pos == 1);
 
   let leftNode: TreeNode;
   let leftLeftNode: TreeNode;
@@ -355,23 +375,24 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
 
       leftNode = {
         kind: "empty",
-        is_next_pos: nextPosRow.id == rootRow.id && rootRow.filling == 0,
+        is_next_pos: nextPosRow.id == selectedRow.id && selectedRow.filling == 0,
         children: [ leftLeftNode, leftRightNode ]
       };
     }
     else
     {
       const leftLeft = subtreePlaces.items.find((p) => p.parent_id == left.id && p.pos == 0);
+      const leftRight = subtreePlaces.items.find((p) => p.parent_id == left.id && p.pos == 1);
+
       leftLeftNode = leftLeft
-        ? await buildFilldTreeNode(leftLeft, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(leftLeft, leftRight, rootRow, isLockedByPrefix, undefined)
         : { kind: "empty", is_next_pos: (nextPosRow.id == left.id && nextPosRow.filling == 0) };
 
-      const leftRight = subtreePlaces.items.find((p) => p.parent_id == left.id && p.pos == 1);
       leftRightNode = leftRight
-        ? await buildFilldTreeNode(leftRight, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(leftRight, leftLeft, rootRow, isLockedByPrefix, undefined)
         : { kind: "empty", is_next_pos: nextPosRow.id == left.id && nextPosRow.filling == 1 };
 
-      leftNode = await buildFilldTreeNode(left!, isLockedByPrefix, [leftLeftNode, leftRightNode]);
+      leftNode = await buildFilldTreeNode(left!, right, rootRow, isLockedByPrefix, [leftLeftNode, leftRightNode]);
     }
 
     let rightNode: TreeNode;
@@ -384,28 +405,29 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
 
       rightNode = {
         kind: "empty",
-        is_next_pos: nextPosRow.id == rootRow.id && rootRow.filling == 1,
+        is_next_pos: nextPosRow.id == selectedRow.id && selectedRow.filling == 1,
         children: [ righttLeftNode, rightRightNode ]
       };
     }
     else
     {
       const rightLeft = subtreePlaces.items.find((p) => p.parent_id == right.id && p.pos == 0);
+      const rightRight = subtreePlaces.items.find((p) => p.parent_id == right.id && p.pos == 1);
+
       righttLeftNode = rightLeft
-        ? await buildFilldTreeNode(rightLeft, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(rightLeft, rightRight, rootRow, isLockedByPrefix, undefined)
         : { kind: "empty", is_next_pos: (nextPosRow.id == right.id && nextPosRow.filling == 0) };
 
-      const rightRight = subtreePlaces.items.find((p) => p.parent_id == right.id && p.pos == 1);
       rightRightNode = rightRight
-        ? await buildFilldTreeNode(rightRight, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(rightRight, rightLeft, rootRow, isLockedByPrefix, undefined)
         : { kind: "empty", is_next_pos: nextPosRow.id == right.id && nextPosRow.filling == 1 };
 
-      rightNode = await buildFilldTreeNode(right!, isLockedByPrefix, [righttLeftNode, rightRightNode]);
+      rightNode = await buildFilldTreeNode(right!, left, rootRow, isLockedByPrefix, [righttLeftNode, rightRightNode]);
     }
 
 
 
-  const rootTreeNode = await buildFilldTreeNode(rootRow, isLockedByPrefix, [leftNode, rightNode]);
+  const rootTreeNode = await buildFilldTreeNode(selectedRow, undefined, rootRow, isLockedByPrefix, [leftNode, rightNode]);
 
 
   res.json(rootTreeNode);
