@@ -10,6 +10,7 @@ import { WalletContractV4, type OpenedContract } from "@ton/ton";
 import { tonConfig } from "../config";
 import { retryExp } from "../utils/retry";
 import { MinQueueTask, Multi } from "../contracts/Mutli";
+import { logger } from "../logger";
 
 export const fetchPlaceData = async (placeAddr: string): Promise<MultiPlaceData | null> => {
   const client = getTonClient();
@@ -198,9 +199,11 @@ export const waitForTaskCanceled = async (
   const start = Date.now();
   
   // eslint-disable-next-line no-constant-condition
+  let attempt = 0;
   while (true) {
 
     const current = await retryExp(() => fetchLastTask(rawMultiAddress), 5,  300);
+    logger.info(`[TaskProcessor] waiting until task canceled prev = ${prevKey}  current= ${current?.key} (attepmt = ${++attempt} ...`);
 
     if (current) {
       const currKey = current.key;
