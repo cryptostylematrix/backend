@@ -170,21 +170,34 @@ app.get("/api/matrix/path", async (req, res) => {
     return res.status(400).json({ error: "m and profile_addr are required" });
   }
 
+
   const rootPlaceRow = await placesRepo.getPlaceByAddress(root_addr);
   const targetPlaceRow = await placesRepo.getPlaceByAddress(place_addr);
-  const rootPlace = rootPlaceRow ? toPlace(rootPlaceRow) : null;
-  const targetPlace = targetPlaceRow ? toPlace(targetPlaceRow) : null;
+  
 
-  if (!rootPlace || !rootPlace.mp) {
+  if (!rootPlaceRow) {
     return res.status(404).json({ error: "Root place not found" });
   }
 
-  if (!targetPlace || !targetPlace.mp) {
+  if (!targetPlaceRow) {
     return res.status(404).json({ error: "Place not found" });
   }
 
-  const rootMp = rootPlace.mp;
-  const targetMp = targetPlace.mp;
+  if (rootPlaceRow.m != m) {
+    return res.status(400).json({ error: "Root place is in the different matrix" });
+  }
+
+  if (targetPlaceRow.m != m) {
+    return res.status(400).json({ error: "Target place is in the different matrix" });
+  }
+
+  if (rootPlaceRow.profile_addr != Address.parse(profile_addr).toString({ urlSafe: true, bounceable: true, testOnly:false})) {
+    return res.status(400).json({ error: "Root place belongs to a different profile" });
+  }
+   
+
+  const rootMp = rootPlaceRow.mp;
+  const targetMp = targetPlaceRow.mp;
 
   const rootIsAncestor = targetMp.startsWith(rootMp);
   const targetIsAncestor = rootMp.startsWith(targetMp);
@@ -193,8 +206,8 @@ app.get("/api/matrix/path", async (req, res) => {
     return res.status(404).json({ error: "Path not found" });
   }
 
-  const shortPlace = rootIsAncestor ? rootPlace : targetPlace;
-  const longPlace = rootIsAncestor ? targetPlace : rootPlace;
+  const shortPlace = rootIsAncestor ? rootPlaceRow : targetPlaceRow;
+  const longPlace = rootIsAncestor ? targetPlaceRow : rootPlaceRow;
 
   const path: Place[] = [];
   let currentMp = longPlace.mp;
@@ -324,7 +337,7 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
     return res.status(404).json({ error: "Next position not found" });
   }
 
-  const locksResult = await locksRepo.getLocks(rootRow.m, rootRow.profile_addr, 1, Number.MAX_SAFE_INTEGER);
+  const locksResult = await locksRepo.getLocks(rootRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
   const lockMps = locksResult.items
     .map((lock) => lock.mp)
     .filter((mp): mp is string => typeof mp === "string" && mp.length > 0);
