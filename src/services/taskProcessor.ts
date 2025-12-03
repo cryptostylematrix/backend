@@ -203,6 +203,13 @@ export class TaskProcessor {
               return false;
           }
 
+          if (parentPlace.id == rootPlace.id)
+          {
+              this.logLockErr("attemmpt to lock the root", taskKey, taskVal);
+              await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+              return false;
+          }
+
           if (!parentPlace.mp.startsWith(rootPlace.mp))
           {
               this.logLockErr("attempt to lcok beyontd structure", taskKey, taskVal);
@@ -210,6 +217,7 @@ export class TaskProcessor {
               return false;
           }
 
+        
           // todo: check for the same lock
           // todo: prevent locking both children of the same parent
 
