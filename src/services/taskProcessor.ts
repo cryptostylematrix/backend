@@ -96,6 +96,12 @@ export class TaskProcessor {
         // stop if key exists in db
         const existing = await placesRepository.getPlaceByTaskKey(taskKey);
         if (existing) {
+
+            if (existing.addr == "00")
+            {
+              logger.info("addr data not set");
+            }
+
           logger.error(`[TaskProcessor] skipping task key=${taskKey} because place already exists`);
           return false;
         }

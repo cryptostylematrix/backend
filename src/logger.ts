@@ -1,57 +1,63 @@
-import { Logger } from "seq-logging";
+import axios from "axios";
 import { seqConfig } from "./config";
 
-const seq = new Logger({
-  serverUrl: seqConfig.url,
-  apiKey: seqConfig.apiKey,
-  onError: (e) => console.error("Seq Logging Error:", e),
-});
+// Define allowed Seq log levels
+export type SeqLevel =
+  | "Fatal"
+  | "Error"
+  | "Warning"
+  | "Information"
+  | "Debug"
+  | "Verbose";
 
-// Define string-based log levels expected by Seq
-const LogLevels = {
-  Verbose: "Verbose",
-  Debug: "Debug",
-  Information: "Information",
-  Warning: "Warning",
-  Error: "Error",
-  Fatal: "Fatal",
-} as const;
-
-function emit(level: string, message: string, properties?: Record<string, any>) {
-  seq.emit({
-    timestamp: new Date(),
-    level,                 // <- now matches the expected type: string
-    messageTemplate: message,
-    properties,
-  });
+// Logging function (fully typed)
+async function sendToSeq(
+  level: SeqLevel,
+  message: string,
+  properties: Record<string, any> = {}
+): Promise<void> {
+  try {
+    await axios.post(
+      `${seqConfig.url}/api/events/raw?apiKey=${seqConfig.apiKey}`,
+      {
+        Events: [
+          {
+            Timestamp: new Date().toISOString(),
+            Level: level,
+            MessageTemplate: message,
+            Properties: properties,
+          },
+        ],
+      }
+    );
+  } catch (err) {
+    console.error("Seq logging failed:", err);
+  }
 }
 
+// Public logger API
 export const logger = {
-  verbose(message: string, properties?: Record<string, any>) {
-    emit(LogLevels.Verbose, message, properties);
+  info(message: string, props?: Record<string, any>) {
+    return sendToSeq("Information", message, props);
   },
 
-  debug(message: string, properties?: Record<string, any>) {
-    emit(LogLevels.Debug, message, properties);
+  warn(message: string, props?: Record<string, any>) {
+    return sendToSeq("Warning", message, props);
   },
 
-  info(message: string, properties?: Record<string, any>) {
-    emit(LogLevels.Information, message, properties);
+  error(message: string, props?: Record<string, any>) {
+    return sendToSeq("Error", message, props);
   },
 
-  warn(message: string, properties?: Record<string, any>) {
-    emit(LogLevels.Warning, message, properties);
+  debug(message: string, props?: Record<string, any>) {
+    return sendToSeq("Debug", message, props);
   },
 
-  error(message: string, properties?: Record<string, any>) {
-    emit(LogLevels.Error, message, properties);
+  fatal(message: string, props?: Record<string, any>) {
+    return sendToSeq("Fatal", message, props);
   },
 
-  fatal(message: string, properties?: Record<string, any>) {
-    emit(LogLevels.Fatal, message, properties);
-  },
-
-  flush() {
-    return seq.flush();
+  verbose(message: string, props?: Record<string, any>) {
+    return sendToSeq("Verbose", message, props);
   },
 };
