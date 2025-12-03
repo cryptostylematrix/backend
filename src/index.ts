@@ -159,22 +159,14 @@ app.get("/api/matrix/:m/:profile_addr/next-pos", async (req, res) => {
 app.get("/api/matrix/path", async (req, res) => {
   const root_addr = String(req.query.root_addr ?? "");
   const place_addr = String(req.query.place_addr ?? "");
-  const m = Number(req.query.m ?? NaN);
-  const profile_addr = String(req.query.profile_addr ?? "");
 
   if (!root_addr || !place_addr) {
     return res.status(400).json({ error: "root_addr and place_addr are required" });
   }
 
-  if (!Number.isFinite(m) || !profile_addr) {
-    return res.status(400).json({ error: "m and profile_addr are required" });
-  }
-
-
   const rootPlaceRow = await placesRepo.getPlaceByAddress(root_addr);
   const targetPlaceRow = await placesRepo.getPlaceByAddress(place_addr);
   
-
   if (!rootPlaceRow) {
     return res.status(404).json({ error: "Root place not found" });
   }
@@ -183,19 +175,11 @@ app.get("/api/matrix/path", async (req, res) => {
     return res.status(404).json({ error: "Place not found" });
   }
 
-  if (rootPlaceRow.m != m) {
-    return res.status(400).json({ error: "Root place is in the different matrix" });
+  if (rootPlaceRow.m != targetPlaceRow.m) {
+    return res.status(400).json({ error: "Places are in different matrixes" });
   }
 
-  if (targetPlaceRow.m != m) {
-    return res.status(400).json({ error: "Target place is in the different matrix" });
-  }
-
-  if (rootPlaceRow.profile_addr != Address.parse(profile_addr).toString({ urlSafe: true, bounceable: true, testOnly:false})) {
-    return res.status(400).json({ error: "Root place belongs to a different profile" });
-  }
-   
-
+  
   const rootMp = rootPlaceRow.mp;
   const targetMp = targetPlaceRow.mp;
 
@@ -213,7 +197,7 @@ app.get("/api/matrix/path", async (req, res) => {
   let currentMp = longPlace.mp;
 
   while (true) {
-    const currentRow = await placesRepo.getPlaceByMp(m, currentMp);
+    const currentRow = await placesRepo.getPlaceByMp(rootPlaceRow.m, currentMp);
     const current = currentRow ? toPlace(currentRow) : null;
     if (!current) {
       return res.status(404).json({ error: "Path not found" });
