@@ -32,7 +32,7 @@ export class TaskProcessor {
       return;
     }
 
-    logger.info(`TaskProcessor: scheduling every 2 seconds for multi ${WATCHED_MULTI_ADDRESS || "<none>"}.`);
+    await logger.info(`TaskProcessor: scheduling every 2 seconds for multi ${WATCHED_MULTI_ADDRESS || "<none>"}.`);
 
     const runOnce = async (): Promise<void> => {
       if (this.running) {
@@ -46,7 +46,7 @@ export class TaskProcessor {
           return;
         }
       } catch (error) {
-        logger.error(`TaskProcessor run failed: ${error}`);
+        await logger.error(`TaskProcessor run failed: ${error}`);
         this.timer = null;
         return;
       } finally {
@@ -73,7 +73,7 @@ export class TaskProcessor {
      
       const lastTask = await fetchLastTask(rawMultiAddress);
       if (!lastTask || lastTask.flag == 0) {
-        logger.info(`[TaskProcessor] last: <empty>`);
+        await logger.info(`[TaskProcessor] last: <empty>`);
         return true;
       }
 
@@ -88,7 +88,7 @@ export class TaskProcessor {
         if (payload.tag === 1) {
           const createPlacePayload = payload as MultiTaskCreatePlacePayload;
           if (createPlacePayload.pos !== null) {
-            logger.error(`[TaskProcessor] skipping create_place with set pos for task key=${taskKey}`);
+            await logger.error(`[TaskProcessor] skipping create_place with set pos for task key=${taskKey}`);
             return false;
           }
         }
@@ -99,30 +99,30 @@ export class TaskProcessor {
 
             if (existing.addr == "00")
             {
-              logger.info("addr data not set");
+              await logger.info("addr data not set");
             }
 
-          logger.error(`[TaskProcessor] skipping task key=${taskKey} because place already exists`);
+          await logger.error(`[TaskProcessor] skipping task key=${taskKey} because place already exists`);
           return false;
         }
 
         // get root place
         const rootPlace = await this.findRootPlace(taskVal.m, taskVal.profile);
         if (!rootPlace) {
-          logger.error(`[TaskProcessor] unable to resolve root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}, task key=${taskKey})`);
+          await logger.error(`[TaskProcessor] unable to resolve root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}, task key=${taskKey})`);
           return false;
         }
 
-        logger.info(`[TaskProcessor] resolved root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address = ${rootPlace.addr}`);
+        await logger.info(`[TaskProcessor] resolved root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address = ${rootPlace.addr}`);
 
         // get next pos
         const nextPos = await findNextPos(rootPlace);
         if (!nextPos) {
-          logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
+          await logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
           return false;
         }
 
-        logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
+        await logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
 
 
         // get parent data BEFORE adding the child
@@ -144,19 +144,19 @@ export class TaskProcessor {
         const parentAddress = Address.parse(nextPos.addr);
         const deployBody = Multi.deployPlaceMessage(taskKey, parentAddress, profiles, taskVal.query_id);
         await sendPaymentToMulti(rawMultiAddress, taskKey, deployBody, toNano("0.5"));
-        logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
+        await logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
 
         // waif until new place data appears
         const newChildAddr = await waitForNewChild(nextPos.addr, parentDataBefore);
         if (!newChildAddr)
         {
-            logger.error(`[TaskProcessor] could not get the new child's data of parent ${nextPos.addr}`);
+            await logger.error(`[TaskProcessor] could not get the new child's data of parent ${nextPos.addr}`);
             return false;
         }
 
         // confirm data in db
         await placesRepository.updatePlaceAddressAndConfirm(createResult.id, newChildAddr!);
-        logger.info(`[TaskProcessor] updated place #${createResult.id} with on-chain address ${newChildAddr} and confirmed`);
+        await logger.info(`[TaskProcessor] updated place #${createResult.id} with on-chain address ${newChildAddr} and confirmed`);
       }
 
       else if (taskVal.payload.tag === 3) {
@@ -167,14 +167,14 @@ export class TaskProcessor {
           const profileData = await fetchProfileData(taskVal.profile);
           if (!profileData || !profileData.owner)
           {
-            this.logLockErr("failed to load profile data", taskKey, taskVal);
+            await this.logLockErr("failed to load profile data", taskKey, taskVal);
             await this.cancelTask(rawMultiAddress, taskKey, taskVal);
             return false;
           }
 
           if (this.toFriendly(lockPosPayload.source) != this.toFriendly(profileData.owner))
           {
-            this.logLockErr("unauthorized sender", taskKey, taskVal);
+            await this.logLockErr("unauthorized sender", taskKey, taskVal);
             await this.cancelTask(rawMultiAddress, taskKey, taskVal);
             return false;
           }
@@ -182,14 +182,14 @@ export class TaskProcessor {
           const rootPlace = await this.findRootPlace(taskVal.m, taskVal.profile);
           if (!rootPlace)
           {
-              this.logLockErr("failed to fetch root place", taskKey, taskVal);
+              await this.logLockErr("failed to fetch root place", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
           if (rootPlace.profile_addr != profileAddr)
           {
-              this.logLockErr("no places in the matrix", taskKey, taskVal);
+              await this.logLockErr("no places in the matrix", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
@@ -198,21 +198,21 @@ export class TaskProcessor {
           const parentPlace = await placesRepository.getPlaceByAddress(parentAddr);
           if (!parentPlace)
           {
-              this.logLockErr("failed to get place", taskKey, taskVal);
+              await this.logLockErr("failed to get place", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
           if (parentPlace.id == rootPlace.id)
           {
-              this.logLockErr("attemmpt to lock the root", taskKey, taskVal);
+              await this.logLockErr("attemmpt to lock the root", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
           if (!parentPlace.mp.startsWith(rootPlace.mp))
           {
-              this.logLockErr("attempt to lcok beyontd structure", taskKey, taskVal);
+              await this.logLockErr("attempt to lcok beyontd structure", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
@@ -226,7 +226,7 @@ export class TaskProcessor {
           await this.cancelTask(rawMultiAddress, taskKey, taskVal);
        
           await locksRepository.updateLockConfirm(createResult.id);
-          logger.info(`[TaskProcessor] updated lock #${createResult.id} with confirmed`);
+          await logger.info(`[TaskProcessor] updated lock #${createResult.id} with confirmed`);
       }
 
       else if (taskVal.payload.tag === 4) {
@@ -237,14 +237,14 @@ export class TaskProcessor {
           const profileData = await fetchProfileData(taskVal.profile);
           if (!profileData || !profileData.owner)
           {
-            this.logUnlockErr("failed to load profile data", taskKey, taskVal);
+            await this.logUnlockErr("failed to load profile data", taskKey, taskVal);
             await this.cancelTask(rawMultiAddress, taskKey, taskVal);
             return false;
           }
 
           if (this.toFriendly(unlockPosPayload.source) != this.toFriendly(profileData.owner))
           {
-            this.logUnlockErr("unauthorized sender", taskKey, taskVal);
+            await this.logUnlockErr("unauthorized sender", taskKey, taskVal);
             await this.cancelTask(rawMultiAddress, taskKey, taskVal);
             return false;
           }
@@ -252,14 +252,14 @@ export class TaskProcessor {
           const lock = await locksRepository.getLockByPlaceAddr(this.toFriendly(unlockPosPayload.pos.parent));
           if (!lock)
           {
-              this.logUnlockErr("lock not found", taskKey, taskVal);
+              await this.logUnlockErr("lock not found", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
           if (lock.profile_addr != profileAddr)
           {
-              this.logUnlockErr("lock belonfs to another profile", taskKey, taskVal);
+              await this.logUnlockErr("lock belonfs to another profile", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
@@ -268,21 +268,21 @@ export class TaskProcessor {
 
           await locksRepository.removeLock(lock.id);
 
-          logger.info(`[TaskProcessor] removed lock #${lock.id}`);
+          await logger.info(`[TaskProcessor] removed lock #${lock.id}`);
           
       }
       else 
       {
-        logger.error(`[TaskProcessor] unsupported tag (key = ${taskKey})`);
+        await logger.error(`[TaskProcessor] unsupported tag (key = ${taskKey})`);
         return false;
       }
 
-      logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
-      logger.info('');
+      await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+      await logger.info('----------------------------------------------------------------------');
       return true;
 
     } catch (error) {
-      logger.error(`[TaskProcessor] failed to process last task: ${error}`);
+      await logger.error(`[TaskProcessor] failed to process last task: ${error}`);
       return false;
     }
   }
@@ -291,20 +291,20 @@ export class TaskProcessor {
   {
       const cancelBody = Multi.cancelTaskMsg(taskKey, taskVal.query_id);
       await sendPaymentToMulti(rawMultiAddress, taskKey, cancelBody, toNano("0.5"));
-      logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
+      await logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
       await waitForTaskCanceled(rawMultiAddress, taskKey);
   }
 
-  private logLockErr(err: string, taskKey: number, taskVal: MultiTaskItem)
+  private async logLockErr(err: string, taskKey: number, taskVal: MultiTaskItem)
   {
     const lockPosPayload = taskVal.payload as MultiTaskLockPosPayload;
-    logger.error(`[TaskProcessor] [lock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
+    await logger.error(`[TaskProcessor] [lock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
   }
 
-  private logUnlockErr(err: string, taskKey: number, taskVal: MultiTaskItem)
+  private async logUnlockErr(err: string, taskKey: number, taskVal: MultiTaskItem)
   {
     const lockPosPayload = taskVal.payload as MultiTaskUnlockPosPayload;
-    logger.error(`[TaskProcessor] [unlock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
+    await logger.error(`[TaskProcessor] [unlock_pos]: ${err}; profile = ${this.toFriendly(taskVal.profile)}  m = ${taskVal.m}  parent = ${lockPosPayload.pos.parent}  (key = ${taskKey})`);
   }
 
   private toFriendly(address: Address): string {
@@ -324,7 +324,7 @@ export class TaskProcessor {
     // get profile of the inviter
     const inviterProfile = await fetchInviterProfileAddr(profileAddr);
     if (!inviterProfile) {
-      logger.error(`[TaskProcessor] profile ${profileAddr} has not chosen inviter yet`);
+      await logger.error(`[TaskProcessor] profile ${profileAddr} has not chosen inviter yet`);
       return null;
     }
 
@@ -376,7 +376,7 @@ export class TaskProcessor {
     if (nextPos.parent_id !== null && nextPos.parent_id !== undefined) {
       await placesRepository.incrementFilling2(nextPos.parent_id);
     }
-    logger.info(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${nextPos.addr}`);
+    await logger.info(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${nextPos.addr}`);
     return result;
   }
 
@@ -409,7 +409,7 @@ export class TaskProcessor {
     };
 
     const result = await locksRepository.addLock(newLock);
-    logger.info(`[TaskProcessor] [lock_pos] created lock for profile ${newLock.profile_addr}: place=${newLock.place_addr}`);
+    await logger.info(`[TaskProcessor] [lock_pos] created lock for profile ${newLock.profile_addr}: place=${newLock.place_addr}`);
     return result;
   }
 }

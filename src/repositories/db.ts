@@ -16,15 +16,15 @@ const createPool = (): Pool => {
 
   pool
     .query("SELECT 1")
-    .then(() => {
-      logger.info("PostgreSQL pool connected");
+    .then(async () => {
+      await logger.info("PostgreSQL pool connected");
     })
-    .catch((err) => {
-      logger.error("PostgreSQL pool connection failed:", err);
+    .catch(async (err) => {
+      await logger.error("PostgreSQL pool connection failed:", err);
     });
 
-  pool.on("error", (err) => {
-    logger.error("Unexpected PostgreSQL pool error:", err);
+  pool.on("error", async (err) => {
+    await logger.error("Unexpected PostgreSQL pool error:", err);
   });
 
   return pool;

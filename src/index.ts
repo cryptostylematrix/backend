@@ -452,8 +452,8 @@ app.get("/tonapi/place-data/:place_addr", async (req, res) => {
 
 // Global error handler to surface uncaught route errors
 app.use(
-  (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    logger.error(`Unhandled error: ${err}`);
+  async (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    await logger.error(`Unhandled error: ${err}`);
     res.status(500).json({ error: "Internal server error" });
   },
 );
@@ -465,6 +465,6 @@ if (process.env.NODE_ENV === "production") {
 }
 
 
-app.listen(appConfig.port, () => {
-  logger.info(`Server running at http://localhost:${appConfig.port}`);
+app.listen(appConfig.port, async () => {
+  await logger.info(`Server running at http://localhost:${appConfig.port}`);
 });

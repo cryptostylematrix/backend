@@ -203,7 +203,7 @@ export const waitForTaskCanceled = async (
   while (true) {
 
     const current = await retryExp(() => fetchLastTask(rawMultiAddress), 5,  300);
-    logger.info(`[TaskProcessor] waiting until task canceled prev = ${prevKey}  current= ${current?.key} (attepmt = ${++attempt} ...`);
+    await logger.info(`[TaskProcessor] waiting until task canceled prev = ${prevKey}  current= ${current?.key} (attepmt = ${++attempt} ...`);
 
     if (current) {
       const currKey = current.key;

@@ -9,7 +9,7 @@ export async function retry<T>(
     return await fn();
   } catch (error) {
     if (retries <= 0) throw error;
-    logger.warn(`[TON] retrying after error: ${error}`);
+    await logger.warn(`[TON] retrying after error: ${error}`);
     await new Promise((res) => setTimeout(res, delay));
     return retry(fn, retries - 1, delay * 2);
   }
@@ -30,7 +30,7 @@ export async function retryExp<T>(
 
       const delay = baseDelay * Math.pow(2, attempt);
 
-      logger.warn(`[TON] retry #${attempt + 1} in ${delay}ms (${error})`);
+      await logger.warn(`[TON] retry #${attempt + 1} in ${delay}ms (${error})`);
       await new Promise((res) => setTimeout(res, delay));
 
       attempt++;

@@ -137,7 +137,7 @@ class PlacesRepository {
        WHERE id = $2
        RETURNING id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index`;
     const values = [address, id];
-    //logger.info("[PlacesRepository] updatePlaceAddressAndConfirm SQL:", query, "values:", values);
+    //await logger.info("[PlacesRepository] updatePlaceAddressAndConfirm SQL:", query, "values:", values);
 
     const result = await this.client.query<PlaceRow>(query, values);
     const row = result.rows[0];

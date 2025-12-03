@@ -159,7 +159,7 @@ class LocksRepository {
           place_index,
           place_pos`;
     const values = [id];
-    //logger.info("[LockRepository] updateLockConfirm SQL:", query, "values:", values);
+    //await logger.info("[LockRepository] updateLockConfirm SQL:", query, "values:", values);
 
     const result = await this.client.query<LockRow>(query, values);
     const row = result.rows[0];
