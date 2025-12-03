@@ -31,6 +31,7 @@ export type TreeFilledNode = {
   image_url: string;
   children?: [TreeNode | undefined, TreeNode | undefined];
   can_be_locked: boolean;
+  is_lock: boolean;
   is_root: boolean;
 };
 

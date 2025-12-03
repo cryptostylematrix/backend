@@ -270,6 +270,7 @@ const buildFilldTreeNode = async (
   siblingRow: PlaceRow | undefined | null,
   rootRow: PlaceRow,
   isLockedByPrefix: (place: PlaceRow) => boolean,
+  isLock: (place: PlaceRow) => boolean,
   children: [TreeNode | undefined, TreeNode | undefined] | undefined,
 ): Promise<TreeFilledNode> => {
   const [rootProfileData, placesCount] = await Promise.all([
@@ -293,6 +294,7 @@ const buildFilldTreeNode = async (
     kind: "filled",
     locked: is_locked,
     can_be_locked: can_be_locked,
+    is_lock: isLock(placeRow),
     is_root: is_root,
     address: placeRow.addr,
     parent_address: placeRow.parent_addr ?? "",
@@ -350,6 +352,9 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
   const isLockedByPrefix = (place: PlaceRow): boolean =>
     lockMps.some((lockMp) => place.mp.startsWith(lockMp));
 
+  const isLock = (place: PlaceRow): boolean =>
+    lockMps.some((lockMp) => place.mp == lockMp);
+
 
 
   const subtreePlaces = await placesRepo.getPlacesByMpPrefix(
@@ -385,14 +390,14 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
       const leftRight = subtreePlaces.items.find((p) => p.parent_id == left.id && p.pos == 1);
 
       leftLeftNode = leftLeft
-        ? await buildFilldTreeNode(leftLeft, leftRight, rootRow, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(leftLeft, leftRight, rootRow, isLockedByPrefix, isLock, undefined)
         : { kind: "empty", is_next_pos: (nextPosRow.id == left.id && nextPosRow.filling == 0) };
 
       leftRightNode = leftRight
-        ? await buildFilldTreeNode(leftRight, leftLeft, rootRow, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(leftRight, leftLeft, rootRow, isLockedByPrefix, isLock, undefined)
         : { kind: "empty", is_next_pos: nextPosRow.id == left.id && nextPosRow.filling == 1 };
 
-      leftNode = await buildFilldTreeNode(left!, right, rootRow, isLockedByPrefix, [leftLeftNode, leftRightNode]);
+      leftNode = await buildFilldTreeNode(left!, right, rootRow, isLockedByPrefix, isLock, [leftLeftNode, leftRightNode]);
     }
 
     let rightNode: TreeNode;
@@ -415,19 +420,19 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
       const rightRight = subtreePlaces.items.find((p) => p.parent_id == right.id && p.pos == 1);
 
       righttLeftNode = rightLeft
-        ? await buildFilldTreeNode(rightLeft, rightRight, rootRow, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(rightLeft, rightRight, rootRow, isLockedByPrefix, isLock, undefined)
         : { kind: "empty", is_next_pos: (nextPosRow.id == right.id && nextPosRow.filling == 0) };
 
       rightRightNode = rightRight
-        ? await buildFilldTreeNode(rightRight, rightLeft, rootRow, isLockedByPrefix, undefined)
+        ? await buildFilldTreeNode(rightRight, rightLeft, rootRow, isLockedByPrefix, isLock, undefined)
         : { kind: "empty", is_next_pos: nextPosRow.id == right.id && nextPosRow.filling == 1 };
 
-      rightNode = await buildFilldTreeNode(right!, left, rootRow, isLockedByPrefix, [righttLeftNode, rightRightNode]);
+      rightNode = await buildFilldTreeNode(right!, left, rootRow, isLockedByPrefix, isLock, [righttLeftNode, rightRightNode]);
     }
 
 
 
-  const rootTreeNode = await buildFilldTreeNode(selectedRow, undefined, rootRow, isLockedByPrefix, [leftNode, rightNode]);
+  const rootTreeNode = await buildFilldTreeNode(selectedRow, undefined, rootRow, isLockedByPrefix, isLock, [leftNode, rightNode]);
 
 
   res.json(rootTreeNode);
