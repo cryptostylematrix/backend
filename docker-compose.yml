@@ -5,11 +5,11 @@ services:
       - .env
     ports:
       - "80:${PORT:-3000}"
-    restart: no
+    restart: "no"
     depends_on:
-      - seq                        # <-- make sure Seq starts first
+      - seq
     environment:
-      SEQ_URL: "http://seq:5341"   # <-- container-to-container URL
+      SEQ_URL: "http://seq:5341"
       SEQ_API_KEY: "${SEQ_API_KEY}"
 
   seq:
@@ -18,9 +18,11 @@ services:
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINUSERNAME: "${SEQ_ADMIN_USER}"
+      SEQ_FIRSTRUN_ADMINPASSWORD: "${SEQ_ADMIN_PASS}"
     ports:
-      - "5341:80"   # UI available at http://localhost:5341
-      - "5342:5341" # Ingestion endpoint available at http://localhost:5342
+      - "5341:80"              # Seq UI
+      - "5342:5341"            # Ingestion endpoint
     volumes:
       - seq-data:/data
 
