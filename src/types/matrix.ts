@@ -40,6 +40,7 @@ export type TreeEmptyNode = {
   is_next_pos: boolean;
   children?: [TreeNode | undefined, TreeNode | undefined];
   can_buy: boolean;
+  parent_addr: string | undefined;
 };
 
 export type TreeNode = TreeFilledNode | TreeEmptyNode;

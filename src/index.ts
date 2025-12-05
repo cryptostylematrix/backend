@@ -333,7 +333,8 @@ const buildEmptyTreeNode = (
     kind: "empty", 
     is_next_pos: isNextPos,
     can_buy: can_buy,
-    children: children
+    children: children,
+    parent_addr: parentRow?.addr,
   }
 };
 
