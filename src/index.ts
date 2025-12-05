@@ -415,7 +415,7 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
 
       leftRightNode = leftRightRow
         ? await buildFilldTreeNode(leftRightRow, leftLeftRow, rootRow, isLockedByPrefix, isLock, undefined)
-        : buildEmptyTreeNode(leftRow, rootRow, nextPosRow, 0, undefined);
+        : buildEmptyTreeNode(leftRow, rootRow, nextPosRow, 1, undefined);
         
 
       leftNode = await buildFilldTreeNode(leftRow, rightRow, rootRow, isLockedByPrefix, isLock, [leftLeftNode, leftRightNode]);
