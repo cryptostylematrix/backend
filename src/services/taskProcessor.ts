@@ -84,8 +84,6 @@ export class TaskProcessor {
       if (taskVal.payload.tag === 1 || taskVal.payload.tag === 2) {
         const payload = taskVal.payload;
         
-      
-
         // stop if key exists in db
         const existing = await placesRepository.getPlaceByTaskKey(taskKey);
         if (existing) {
@@ -121,21 +119,27 @@ export class TaskProcessor {
             {
                 await logger.error(`[TaskProcessor] fixedparent cannot be find (task key=${taskKey})`);
                 await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-                return false;
+                await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+                await logger.info('----------------------------------------------------------------------');
+                return true;
             }
 
             if (fixedparent.m != taskVal.m)
             {
                 await logger.error(`[TaskProcessor] fixedparent is in the different matrix (task key=${taskKey})`);
                 await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-                return false;
+                await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+                await logger.info('----------------------------------------------------------------------');
+                return true;
             }
 
             if (!fixedparent.mp.startsWith(rootPlace.mp))
             {
                 await logger.error(`[TaskProcessor] fixedparent is in the different structure (task key=${taskKey})`);
                 await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-                return false;
+                await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+                await logger.info('----------------------------------------------------------------------');
+                return true;
             }
     
 
@@ -321,6 +325,12 @@ export class TaskProcessor {
     }
   }
 
+
+  
+
+
+
+
   private async cancelTask(rawMultiAddress: string, taskKey: number, taskVal: MultiTaskItem)
   {
       const cancelBody = Multi.cancelTaskMsg(taskKey, taskVal.query_id);
@@ -413,7 +423,6 @@ export class TaskProcessor {
     await logger.info(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${parentRow.addr}`);
     return result;
   }
-
 
   private async createLockFromTask(taskKey: number, taskVal: MultiTaskItem, parentPlace: PlaceRow): Promise<LockRow> {
 
