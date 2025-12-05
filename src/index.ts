@@ -471,8 +471,8 @@ app.use(
   },
 );
 
-
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV === "production") 
+{
   const taskProcessor = new TaskProcessor();
   void taskProcessor.run();
 }

@@ -84,14 +84,7 @@ export class TaskProcessor {
       if (taskVal.payload.tag === 1 || taskVal.payload.tag === 2) {
         const payload = taskVal.payload;
         
-        // stop if pos set
-        if (payload.tag === 1) {
-          const createPlacePayload = payload as MultiTaskCreatePlacePayload;
-          if (createPlacePayload.pos !== null) {
-            await logger.error(`[TaskProcessor] skipping create_place with set pos for task key=${taskKey}`);
-            return false;
-          }
-        }
+      
 
         // stop if key exists in db
         const existing = await placesRepository.getPlaceByTaskKey(taskKey);
@@ -115,21 +108,62 @@ export class TaskProcessor {
 
         await logger.info(`[TaskProcessor] resolved root place for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address = ${rootPlace.addr}`);
 
-        // get next pos
-        const nextPos = await findNextPos(rootPlace);
-        if (!nextPos) {
-          await logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
-          return false;
+
+        // look for the parent
+        let parentRow: PlaceRow;
+        if (payload.tag === 1 && payload.pos) {  
+            const parentAddr = this.toFriendly(payload.pos.parent);
+
+            await logger.info(`[TaskProcessor] fixed pos is set for create_place to addr = ${parentAddr} (task key=${taskKey}`);
+
+            const fixedparent = await placesRepository.getPlaceByAddress(parentAddr);
+            if (!fixedparent)
+            {
+                await logger.error(`[TaskProcessor] fixedparent cannot be find (task key=${taskKey})`);
+                await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+                return false;
+            }
+
+            if (fixedparent.m != taskVal.m)
+            {
+                await logger.error(`[TaskProcessor] fixedparent is in the different matrix (task key=${taskKey})`);
+                await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+                return false;
+            }
+
+            if (!fixedparent.mp.startsWith(rootPlace.mp))
+            {
+                await logger.error(`[TaskProcessor] fixedparent is in the different structure (task key=${taskKey})`);
+                await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+                return false;
+            }
+    
+
+            await logger.info(`[TaskProcessor] parent position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${fixedparent.addr}`);
+
+            parentRow = fixedparent;
+        }
+        else
+        {
+            // get next pos
+            const nextPos = await findNextPos(rootPlace);
+            if (!nextPos) {
+              await logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
+              return false;
+            }
+
+            await logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
+
+            parentRow = nextPos;
         }
 
-        await logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
-
+ 
 
         // get parent data BEFORE adding the child
-        const parentDataBefore = await fetchPlaceData(nextPos.addr);
+        const parentDataBefore = await fetchPlaceData(parentRow.addr);
 
         // create place
-        const createResult = await this.createPlaceFromTask(taskKey, taskVal, nextPos);
+        const createResult = await this.createPlaceFromTask(taskKey, taskVal, parentRow);
 
         const profiles: MultiPlaceProfilesData = {
           clone: createResult.clone,
@@ -141,16 +175,16 @@ export class TaskProcessor {
         };
 
         // send deploy
-        const parentAddress = Address.parse(nextPos.addr);
+        const parentAddress = Address.parse(parentRow.addr);
         const deployBody = Multi.deployPlaceMessage(taskKey, parentAddress, profiles, taskVal.query_id);
         await sendPaymentToMulti(rawMultiAddress, taskKey, deployBody, toNano("0.5"));
         await logger.info(`[TaskProcessor] sent 0.5 TON from processor wallet to multi for task key=${taskKey}`);
 
         // waif until new place data appears
-        const newChildAddr = await waitForNewChild(nextPos.addr, parentDataBefore);
+        const newChildAddr = await waitForNewChild(parentRow.addr, parentDataBefore);
         if (!newChildAddr)
         {
-            await logger.error(`[TaskProcessor] could not get the new child's data of parent ${nextPos.addr}`);
+            await logger.error(`[TaskProcessor] could not get the new child's data of parent ${parentRow.addr}`);
             return false;
         }
 
@@ -331,7 +365,7 @@ export class TaskProcessor {
     return this.findRootPlace(m, inviterProfile);
   }
 
-  private async createPlaceFromTask(taskKey: number, taskVal: MultiTaskItem, nextPos: PlaceRow): Promise<PlaceRow> {
+  private async createPlaceFromTask(taskKey: number, taskVal: MultiTaskItem, parentRow: PlaceRow): Promise<PlaceRow> {
 
     const profileContent = await fetchProfileContent(taskVal.profile);
     if (!profileContent) {
@@ -343,8 +377,8 @@ export class TaskProcessor {
     const placeNumber =(await placesRepository.getMaxPlaceNumber(taskVal.m, this.toFriendly(taskVal.profile))) + 1;
 
     // Use current filling to pick next position: 0 -> left, 1 -> right.
-    const childPos = (nextPos.filling % 2) as 0 | 1;
-    const mp = `${nextPos.mp}${childPos}`;
+    const childPos = (parentRow.filling % 2) as 0 | 1;
+    const mp = `${parentRow.mp}${childPos}`;
 
     const inviterProfile = await fetchInviterProfileAddr(taskVal.profile);
 
@@ -356,8 +390,8 @@ export class TaskProcessor {
       m: taskVal.m,
       profile_addr: this.toFriendly(taskVal.profile),
       address: "00",
-      parent_address: nextPos.addr,
-      parent_id: nextPos.id,
+      parent_address: parentRow.addr,
+      parent_id: parentRow.id,
       mp,
       pos: childPos,
       place_number: placeNumber,
@@ -372,11 +406,11 @@ export class TaskProcessor {
     };
 
     const result = await placesRepository.addPlace(newPlace);
-    await placesRepository.incrementFilling(nextPos.id);
-    if (nextPos.parent_id !== null && nextPos.parent_id !== undefined) {
-      await placesRepository.incrementFilling2(nextPos.parent_id);
+    await placesRepository.incrementFilling(parentRow.id);
+    if (parentRow.parent_id !== null && parentRow.parent_id !== undefined) {
+      await placesRepository.incrementFilling2(parentRow.parent_id);
     }
-    await logger.info(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${nextPos.addr}`);
+    await logger.info(`[TaskProcessor] created place for profile ${newPlace.profile_addr}: parent=${parentRow.addr}`);
     return result;
   }
 
