@@ -39,6 +39,7 @@ export type TreeEmptyNode = {
   kind: "empty";
   is_next_pos: boolean;
   children?: [TreeNode | undefined, TreeNode | undefined];
+  can_buy: boolean;
 };
 
 export type TreeNode = TreeFilledNode | TreeEmptyNode;
