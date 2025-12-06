@@ -1,19 +1,31 @@
 export type MatrixPlace = {
-  address: string;
+  addr: string;
   profile_addr: string;
-  parent_address: string | null;
+  parent_addr: string | null;
   place_number: number;
   created_at: number;
   fill_count: number;
   clone: number; // 1 means clone
   pos: 0 | 1;
   login: string;
-  index: string;
   m: number;
 };
 
-export type PaginatedPlaces = {
-  items: MatrixPlace[];
+export type MatrixLock = {
+  m: number;
+  profile_addr: string;
+
+  place_addr: string;
+  locked_pos:  0 | 1;
+
+  place_profile_login: string;
+  place_number: number;
+  craeted_at: number;
+};
+
+
+export type Paginated<T> = {
+  items: T[];
   page: number;
   totalPages: number;
 };
@@ -21,26 +33,35 @@ export type PaginatedPlaces = {
 export type TreeFilledNode = {
   kind: "filled";
   locked: boolean;
+  can_lock: boolean;
+  is_lock: boolean;
+  children: [TreeNode, TreeNode] | undefined;
+  parent_addr: string | undefined | null;
+  pos: 0 | 1,
+
   address: string;
-  parent_address: string;
-  descendants: number;
   place_number: number;
   clone: number;
   created_at: number;
   login: string;
   image_url: string;
-  children?: [TreeNode | undefined, TreeNode | undefined];
-  can_be_locked: boolean;
-  is_lock: boolean;
+  
+  descendants: number;
   is_root: boolean;
 };
 
 export type TreeEmptyNode = {
   kind: "empty";
+  locked: boolean;
+  can_lock: boolean;
+  is_lock: boolean;
+  children?: [TreeNode, TreeNode] | undefined;
+  parent_addr: string | undefined | null;
+  pos: 0 | 1,
+
   is_next_pos: boolean;
-  children?: [TreeNode | undefined, TreeNode | undefined];
   can_buy: boolean;
-  parent_addr: string | undefined;
+
 };
 
 export type TreeNode = TreeFilledNode | TreeEmptyNode;

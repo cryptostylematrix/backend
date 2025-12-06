@@ -9,15 +9,13 @@ export type LockRow = {
   profile_addr: string;
 
   place_addr: string;
-  place_parent_addr: string | null;
-  place_profile_addr: string;
+  locked_pos: number;
+
+  place_profile_login: string;
   place_number: number;
   craeted_at: number;
-  place_clone: number;
-  place_profile_login: string;
-  place_index: string;
-  place_pos: number;
 };
+
 
 export type NewLock = {
   mp: string;
@@ -30,14 +28,11 @@ export type NewLock = {
   confirmed: boolean;
 
   place_addr: string;
-  place_parent_addr: string | null;
-  place_profile_addr: string;
+  locked_pos: number;
+
+  place_profile_login: string;
   place_number: number;
   craeted_at: number;
-  place_clone: number;
-  place_profile_login: string;
-  place_index: string;
-  place_pos: number;
 };
 
 
@@ -55,7 +50,7 @@ class LocksRepository {
 
     const totalResult = await this.client.query<{ count: string }>(
       `SELECT COUNT(*)::bigint AS count
-       FROM multi_locks
+       FROM multi_locks2
        WHERE m = $1 AND profile_addr = $2`,
       [m, profile_addr],
     );
@@ -66,8 +61,10 @@ class LocksRepository {
     }
 
     const result = await this.client.query<LockRow>(
-      `SELECT id, m, mp, profile_addr, place_addr, place_parent_addr, place_profile_addr, place_number, craeted_at, place_clone, place_profile_login, place_index, place_pos
-       FROM multi_locks
+      `SELECT id, mp, m, profile_addr, 
+          place_addr, locked_pos, 
+          place_profile_login, place_number, craeted_at        
+       FROM multi_locks2
        WHERE m = $1 AND profile_addr = $2
        ORDER BY place_number ASC
        LIMIT $3 OFFSET $4`,
@@ -79,7 +76,7 @@ class LocksRepository {
 
   async addLock(data: NewLock): Promise<LockRow> {
     const result = await this.client.query<LockRow>(
-      `INSERT INTO multi_locks (
+      `INSERT INTO multi_locks2 (
           task_key,
           task_query_id,
           task_source_addr,
@@ -90,29 +87,20 @@ class LocksRepository {
           profile_addr,
 
           place_addr,
-          place_parent_addr,
-          place_profile_addr,
-          place_number,
-          craeted_at,
-          place_clone,
+          locked_pos,
           place_profile_login,
-          place_index,
-          place_pos
+          place_number,
+          craeted_at
       )
       VALUES (
           $1, $2, $3, $4,
           $5, $6, $7,
-          $8, $9, $10, $11, $12, $13, $14, $15, $16
+          $8, $9, $10, $11, $12
       )
       RETURNING 
-          id, m, mp, profile_addr, 
-          place_addr, place_parent_addr,
-          place_profile_addr,
-          place_number, craeted_at,
-          place_clone,
-          place_profile_login,
-          place_index,
-          place_pos`,
+          id, mp, m, profile_addr, 
+          place_addr, locked_pos, 
+          place_profile_login, place_number, craeted_at`,
       [
         data.task_key,
         data.task_query_id,
@@ -124,14 +112,10 @@ class LocksRepository {
         data.profile_addr,
 
         data.place_addr,
-        data.place_parent_addr,
-        data.place_profile_addr,
+        data.locked_pos,
+        data.place_profile_login,
         data.place_number,
         data.craeted_at,
-        data.place_clone,
-        data.place_profile_login,
-        data.place_index,
-        data.place_pos,
       ],
   );
 
@@ -146,18 +130,14 @@ class LocksRepository {
 
 
   async updateLockConfirm(id: number): Promise<LockRow> {
-    const query = `UPDATE multi_locks
+    const query = `UPDATE multi_locks2
       SET confirmed = TRUE
       WHERE id = $1
       RETURNING 
-          id, m, mp, profile_addr, 
-          place_addr, place_parent_addr,
-          place_profile_addr,
-          place_number, craeted_at,
-          place_clone,
-          place_profile_login,
-          place_index,
-          place_pos`;
+          id, mp, m, profile_addr, 
+          place_addr, locked_pos, 
+          place_profile_login, place_number, craeted_at`;
+
     const values = [id];
     //await logger.info("[LockRepository] updateLockConfirm SQL:", query, "values:", values);
 
@@ -169,21 +149,16 @@ class LocksRepository {
     return row;
   }
 
-  async getLockByPlaceAddr(place_addr: string): Promise<LockRow | null> {
+  async getLockByPlaceAddrAndLockedPos(place_addr: string, locked_pos: number): Promise<LockRow | null> {
   const result = await this.client.query<LockRow>(
     `SELECT 
-       id, m, mp, profile_addr, 
-        place_addr, place_parent_addr,
-        place_profile_addr,
-        place_number, craeted_at,
-        place_clone,
-        place_profile_login,
-        place_index,
-        place_pos
-     FROM multi_locks
-     WHERE place_addr = $1
+        id, mp, m, profile_addr, 
+        place_addr, locked_pos, 
+        place_profile_login, place_number, craeted_at
+     FROM multi_locks2
+     WHERE place_addr = $1 AND locked_pos = $2
      LIMIT 1`,
-    [place_addr],
+    [place_addr, locked_pos],
   );
 
   const row = result.rows[0] ?? null;
@@ -192,7 +167,7 @@ class LocksRepository {
 
   async removeLock(id: number): Promise<void> {
     const result = await this.client.query(
-      `DELETE FROM multi_locks
+      `DELETE FROM multi_locks2
       WHERE id = $1
       RETURNING id`,
       [id],

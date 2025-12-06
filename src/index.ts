@@ -1,6 +1,6 @@
 import express from "express";
 import { Address } from "@ton/core";
-import { MatrixPlace, PaginatedPlaces, TreeEmptyNode, TreeFilledNode, TreeNode } from "./types/matrix";
+import { MatrixLock, MatrixPlace, Paginated, TreeEmptyNode, TreeFilledNode, TreeNode } from "./types/matrix";
 import { locksRepository, type LockRow } from "./repositories/locksRepository";
 import { placesRepository, type PlaceRow } from "./repositories/placesRepository";
 import { TaskProcessor } from "./services/taskProcessor";
@@ -8,6 +8,7 @@ import { fetchPlaceData, fetchProfileContent } from "./services/contractsService
 import { findNextPos } from "./services/nextPosService";
 import { appConfig } from "./config";
 import { logger } from "./logger";
+import { NodePosInfo, TreeInfo } from "./types/NodePosInfo";
 
 
 const app = express();
@@ -52,69 +53,61 @@ app.use((req, res, next) => {
 const placesRepo = placesRepository;
 const locksRepo = locksRepository;
 
-type Place = {
-  id: number;
-  parent_id: number | null;
-  address: string;
-  parent_address: string | null;
-  place_number: number;
-  created_at: number;
-  fill_count: number;
-  clone: number;
-  pos: 0 | 1;
-  login: string;
-  index: string;
-  m: number;
-  mp: string;
-  profile_addr: string;
-};
+// type Place = {
+//   id: number;
+//   parent_id: number | null;
+//   address: string;
+//   parent_address: string | null;
+//   place_number: number;
+//   created_at: number;
+//   fill_count: number;
+//   clone: number;
+//   pos: 0 | 1;
+//   login: string;
+//   index: string;
+//   m: number;
+//   mp: string;
+//   profile_addr: string;
+// };
 
-const toPlace = (row: PlaceRow): Place => ({
-  id: row.id,
-  parent_id: row.parent_id ?? null,
-  address: row.addr,
-  parent_address: row.parent_addr,
+const mapPlaceRow = (row: PlaceRow): MatrixPlace => ({
+  // id: row.id,
+  // parent_id: row.parent_id ?? null,
+  addr: row.addr,
+  parent_addr: row.parent_addr,
   place_number: row.place_number,
   created_at: row.craeted_at,
   fill_count: row.filling2,
   clone: row.clone,
   pos: (row.pos as 0 | 1) ?? 0,
   login: row.profile_login,
-  index: row.index,
+  // index: row.index,
   m: row.m,
-  mp: row.mp,
+  // mp: row.mp,
   profile_addr: row.profile_addr,
 });
 
 const mapLockRow = (
   row: LockRow,
-): MatrixPlace=> ({
-  address: row.place_addr,
-  parent_address: row.place_parent_addr,
-  place_number: row.place_number,
-  created_at: row.craeted_at,
-  fill_count: 0,
-  clone: row.place_clone,
-  pos: row.place_pos as 0 | 1,
-  login: row.place_profile_login,
-  index: row.place_index,
+): MatrixLock=> ({
   m: row.m,
-  profile_addr: row.place_profile_addr,
+  profile_addr: row.profile_addr,
+
+  place_addr: row.place_addr,
+  locked_pos: (row.locked_pos as 0 | 1) ?? 0,
+
+  place_profile_login: row.place_profile_login,
+  place_number: row.place_number,
+  craeted_at: row.craeted_at
 });
 
-const stripMp = (place: Place): MatrixPlace => {
-  const { mp: _mp, id: _id, parent_id: _parent_id, ...rest } = place;
-  return rest;
-};
 
-const stripMpArray = (items: Place[]): MatrixPlace[] => items.map(stripMp);
-
-const buildPaginationPayload = (
-  items: MatrixPlace[],
+const buildPaginationPayload = <T>(
+  items: T[],
   total: number,
   page = 1,
   pageSize = 10,
-): PaginatedPlaces => {
+): Paginated<T> => {
   const safePage = Number.isFinite(page) && page > 0 ? page : 1;
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 10;
   const totalPages = Math.max(1, Math.ceil(total / safePageSize));
@@ -131,13 +124,13 @@ app.get("/api/matrix/:m/:profile_addr/root", async (req, res) => {
   const m = Number(req.params.m);
   const { profile_addr } = req.params;
   const rootRow = await placesRepo.getRootPlace(m, profile_addr);
-  const root = rootRow ? toPlace(rootRow) : null;
+  const root = rootRow ? mapPlaceRow(rootRow) : null;
 
   if (!root) {
     return res.status(404).json({ error: "Root place not found" });
   }
 
-  res.json(stripMp(root));
+  res.json(root);
 });
 
 app.get("/api/matrix/:m/:profile_addr/next-pos", async (req, res) => {
@@ -148,12 +141,13 @@ app.get("/api/matrix/:m/:profile_addr/next-pos", async (req, res) => {
     return res.status(404).json({ error: "Root place not found" });
   }
 
-  const nextPosRow = await findNextPos(rootRow);
-  if (!nextPosRow) {
+  const locks = await locksRepository.getLocks(rootRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
+  const nextPos = await findNextPos(rootRow, locks.items);
+  if (!nextPos) {
     return res.status(404).json({ error: "Next position not found" });
   }
 
-  return res.json(stripMp(toPlace(nextPosRow)));
+  return res.json(mapPlaceRow(nextPos));
 });
 
 app.get("/api/matrix/path", async (req, res) => {
@@ -193,12 +187,12 @@ app.get("/api/matrix/path", async (req, res) => {
   const shortPlace = rootIsAncestor ? rootPlaceRow : targetPlaceRow;
   const longPlace = rootIsAncestor ? targetPlaceRow : rootPlaceRow;
 
-  const path: Place[] = [];
+  const path: MatrixPlace[] = [];
   let currentMp = longPlace.mp;
 
   while (true) {
     const currentRow = await placesRepo.getPlaceByMp(rootPlaceRow.m, currentMp);
-    const current = currentRow ? toPlace(currentRow) : null;
+    const current = currentRow ? mapPlaceRow(currentRow) : null;
     if (!current) {
       return res.status(404).json({ error: "Path not found" });
     }
@@ -213,7 +207,7 @@ app.get("/api/matrix/path", async (req, res) => {
   }
 
   const orderedPath = path.reverse();
-  res.json(stripMpArray(orderedPath));
+  res.json(orderedPath);
 });
 
 app.get("/api/matrix/:m/:profile_addr/places", async (req, res) => {
@@ -223,14 +217,12 @@ app.get("/api/matrix/:m/:profile_addr/places", async (req, res) => {
   const pageSize = Number(req.query.pageSize ?? 10);
   const placesResult = await placesRepo.getPlaces(m, profile_addr, page, pageSize);
 
-
-
   if (!placesResult) {
     return res.status(404).json({ error: "Matrix not found" });
   }
 
-  const normalized = placesResult.items.map(toPlace);
-  const payload = buildPaginationPayload(stripMpArray(normalized), placesResult.total, page, pageSize);
+  const normalized = placesResult.items.map(mapPlaceRow);
+  const payload = buildPaginationPayload(normalized, placesResult.total, page, pageSize);
 
   res.json(payload);
 });
@@ -265,12 +257,20 @@ app.get("/api/matrix/:m/:profile_addr/locks", async (req, res) => {
   res.json(payload);
 });
 
+/*
+we cannot lock
+- if place is from diff structure
+- if there is existiing lock
+- if there is a sibling lock
+- if the place is in locked subree
+
+
+*/ 
+
+
 const buildFilldTreeNode = async (
+  npi: NodePosInfo,
   placeRow: PlaceRow,
-  siblingRow: PlaceRow | undefined | null,
-  rootRow: PlaceRow,
-  isLockedByPrefix: (place: PlaceRow) => boolean,
-  isLock: (place: PlaceRow) => boolean,
   children: [TreeNode, TreeNode] | undefined,
 ): Promise<TreeFilledNode> => {
   const [profileData, placesCount] = await Promise.all([
@@ -279,62 +279,50 @@ const buildFilldTreeNode = async (
   ]);
   const descendants = Math.max(0, placesCount - 1); // exclude the current node from descendant count
 
-  const is_root = placeRow.id == rootRow.id;
-  let is_locked = isLockedByPrefix(placeRow);
-  let can_be_locked = !is_locked;
-  if (can_be_locked)
-  {
-    if (is_root || (siblingRow && isLockedByPrefix(siblingRow)))
-    {
-      can_be_locked = false;
-    }
-
-    if (!placeRow.mp.startsWith(rootRow.mp))
-    {
-      can_be_locked = false;
-    }
-  }
 
   return {
     kind: "filled",
-    locked: is_locked,
-    can_be_locked: can_be_locked,
-    is_lock: isLock(placeRow),
-    is_root: is_root,
+    locked: npi.isLocked,
+    can_lock: npi.canLock,
+    is_lock: npi.isLock,
+    children: children,
+    parent_addr: placeRow.parent_addr,
+    pos: npi.pos,
+
+    is_root: npi.isRoot,
     address: placeRow.addr,
-    parent_address: placeRow.parent_addr ?? "",
     descendants,
     place_number: placeRow.place_number,
     clone: placeRow.clone,
     created_at: placeRow.craeted_at,
     login: placeRow.profile_login,
     image_url: profileData?.imageUrl ?? "",
-    children
   };
 };
 
 const buildEmptyTreeNode = (
+  npi: NodePosInfo,
   parentRow: PlaceRow | undefined,
-  rootRow: PlaceRow,
-  nextPosRow: PlaceRow,
-  pos: number,
   children: [TreeEmptyNode, TreeEmptyNode] | undefined,
 ): TreeEmptyNode => {
 
-  const isNextPos = parentRow ? 
-    nextPosRow.id == parentRow.id && nextPosRow.filling == pos :
-    false; // Next Pos cannot be an empty node
-
-  const can_buy = parentRow ? 
-    parentRow.mp.startsWith(rootRow.mp) :
-    false; // you cannot buy if parent is also EmptyTreeNode
+  let canLock = npi.canLock;
+  if (npi.pos == 0) // we cannot lock left place is it's empty because we build from left to rigth
+  {
+    canLock = false;
+  }
 
   return { 
     kind: "empty", 
-    is_next_pos: isNextPos,
-    can_buy: can_buy,
+    locked: npi.isLocked,
+    can_lock: npi.canLock,
+    is_lock: npi.isLock,
     children: children,
     parent_addr: parentRow?.addr,
+    pos: npi.pos,
+
+    is_next_pos: npi.isNextPos,
+    can_buy: npi.canBuy,
   }
 };
 
@@ -350,8 +338,8 @@ app.get("/api/matrix/:m/:profile_addr/search", async (req, res) => {
     return res.status(404).json({ error: "Matrix not found" });
   }
 
-  const normalized = placesResult.items.map(toPlace);
-  const payload = buildPaginationPayload(stripMpArray(normalized), placesResult.total, page, pageSize);
+  const normalized = placesResult.items.map(mapPlaceRow);
+  const payload = buildPaginationPayload(normalized, placesResult.total, page, pageSize);
   res.json(payload);
 });
 
@@ -369,27 +357,15 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
     return res.status(404).json({ error: "Root not found" });
   }
 
-  const nextPosRow = await findNextPos(selectedRow);
+  const locksResult = await locksRepo.getLocks(selectedRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
+
+  const nextPosRow = await findNextPos(selectedRow, locksResult.items);
   if (!nextPosRow) {
     return res.status(404).json({ error: "Next position not found" });
   }
 
-  const locksResult = await locksRepo.getLocks(selectedRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
-  const lockMps = locksResult.items
-    .map((lock) => lock.mp)
-    .filter((mp): mp is string => typeof mp === "string" && mp.length > 0);
-
-  const isLockedByPrefix = (place: PlaceRow): boolean =>
-    lockMps.some((lockMp) => place.mp.startsWith(lockMp));
-
-  const isLock = (place: PlaceRow): boolean =>
-    lockMps.some((lockMp) => place.mp == lockMp);
-
-
 
   const subtreePlaces = await placesRepo.getPlacesByMpPrefix(selectedRow.m, selectedRow.mp, 2, 1, Number.MAX_SAFE_INTEGER);
-
-  
 
   const leftRow = subtreePlaces.items.find((p) => p.parent_id == selectedRow.id && p.pos == 0);
   const rightRow = subtreePlaces.items.find((p) => p.parent_id == selectedRow.id && p.pos == 1);
@@ -398,10 +374,21 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
   let leftLeftNode: TreeNode;
   let leftRightNode: TreeNode;
 
+  let treeInfo = new TreeInfo(rootRow, nextPosRow, locksResult.items); 
+
+  const npiSelected = treeInfo.getNodePosInfo(undefined, selectedRow.mp);
+  const npiLeft = treeInfo.getNodePosInfo(selectedRow, `${selectedRow.mp}0`);
+  const npiLeftLeft = treeInfo.getNodePosInfo(leftRow, `${selectedRow.mp}00`);
+  const npiLeftRight = treeInfo.getNodePosInfo(leftRow, `${selectedRow.mp}01`);
+
+  const npiRight = treeInfo.getNodePosInfo(selectedRow, `${selectedRow.mp}1`);
+  const npiRightLeft = treeInfo.getNodePosInfo(rightRow, `${selectedRow.mp}10`);
+  const npiRightRight = treeInfo.getNodePosInfo(rightRow, `${selectedRow.mp}11`);
+
   if (!leftRow) {
-      leftLeftNode = buildEmptyTreeNode(leftRow, rootRow, nextPosRow, 0, undefined);
-      leftRightNode = buildEmptyTreeNode(leftRow, rootRow, nextPosRow, 1, undefined);
-      leftNode = buildEmptyTreeNode(selectedRow, rootRow, nextPosRow, 0, [leftLeftNode , leftRightNode]);
+      leftLeftNode = buildEmptyTreeNode(npiLeftLeft, leftRow, undefined);
+      leftRightNode = buildEmptyTreeNode(npiLeftRight, leftRow, undefined);
+      leftNode = buildEmptyTreeNode(npiLeft, selectedRow, [leftLeftNode , leftRightNode]);
     }
     else
     {
@@ -410,15 +397,15 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
 
 
       leftLeftNode = leftLeftRow
-        ? await buildFilldTreeNode(leftLeftRow, leftRightRow, rootRow, isLockedByPrefix, isLock, undefined)
-        : buildEmptyTreeNode(leftRow, rootRow, nextPosRow, 0, undefined);
+        ? await buildFilldTreeNode(npiLeftLeft, leftLeftRow, undefined)
+        : buildEmptyTreeNode(npiLeftLeft, leftRow, undefined);
 
       leftRightNode = leftRightRow
-        ? await buildFilldTreeNode(leftRightRow, leftLeftRow, rootRow, isLockedByPrefix, isLock, undefined)
-        : buildEmptyTreeNode(leftRow, rootRow, nextPosRow, 1, undefined);
+        ? await buildFilldTreeNode(npiLeftRight, leftRightRow, undefined)
+        : buildEmptyTreeNode(npiLeftRight, leftRow, undefined);
         
 
-      leftNode = await buildFilldTreeNode(leftRow, rightRow, rootRow, isLockedByPrefix, isLock, [leftLeftNode, leftRightNode]);
+      leftNode = await buildFilldTreeNode(npiLeft, leftRow, [leftLeftNode, leftRightNode]);
     }
 
     let rightNode: TreeNode;
@@ -426,9 +413,9 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
     let rightRightNode: TreeNode;
 
     if (!rightRow) {
-      righttLeftNode = buildEmptyTreeNode(rightRow, rootRow, nextPosRow, 0, undefined);
-      rightRightNode = buildEmptyTreeNode(rightRow, rootRow, nextPosRow, 1, undefined);
-      rightNode = buildEmptyTreeNode(selectedRow, rootRow, nextPosRow, 1, [ righttLeftNode, rightRightNode ]);
+      righttLeftNode = buildEmptyTreeNode(npiRightLeft, rightRow, undefined);
+      rightRightNode = buildEmptyTreeNode(npiRightRight, rightRow, undefined);
+      rightNode = buildEmptyTreeNode(npiRight, selectedRow, [righttLeftNode , rightRightNode]);
     }
     else
     {
@@ -436,17 +423,17 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
       const rightRightRow = subtreePlaces.items.find((p) => p.parent_id == rightRow.id && p.pos == 1);
 
       righttLeftNode = rightLeftRow
-        ? await buildFilldTreeNode(rightLeftRow, rightRightRow, rootRow, isLockedByPrefix, isLock, undefined)
-        : buildEmptyTreeNode(rightRow, rootRow, nextPosRow, 0, undefined);
+        ? await buildFilldTreeNode(npiRightLeft, rightLeftRow, undefined)
+        : buildEmptyTreeNode(npiRightLeft, rightRow, undefined);
        
       rightRightNode = rightRightRow
-        ? await buildFilldTreeNode(rightRightRow, rightLeftRow, rootRow, isLockedByPrefix, isLock, undefined)
-        : buildEmptyTreeNode(rightRow, rootRow, nextPosRow, 1, undefined);
+        ? await buildFilldTreeNode(npiRightRight, rightRightRow, undefined)
+        : buildEmptyTreeNode(npiRightRight, rightRow, undefined);
 
-      rightNode = await buildFilldTreeNode(rightRow, leftRow, rootRow, isLockedByPrefix, isLock, [righttLeftNode, rightRightNode]);
+      rightNode = await buildFilldTreeNode(npiRight, rightRow, [righttLeftNode, rightRightNode]);
     }
 
-  const rootTreeNode = await buildFilldTreeNode(selectedRow, undefined, rootRow, isLockedByPrefix, isLock, [leftNode, rightNode]);
+  const rootTreeNode = await buildFilldTreeNode(npiSelected, selectedRow, [leftNode, rightNode]);
 
   res.json(rootTreeNode);
 });

@@ -136,7 +136,8 @@ export const MultiTask = {
 
 // _#_ parent:MsgAddress = PlacePos;
 export type PlacePosData = {
-    parent: Address
+    parent: Address;
+    pos: number;
 };
 
 const placePosToCell = (data: PlacePosData | null): Cell | null => {
@@ -146,6 +147,7 @@ const placePosToCell = (data: PlacePosData | null): Cell | null => {
 
     return beginCell()
         .storeAddress(data.parent)
+        .storeUint(data.pos, 1)
         .endCell();
 };
 
@@ -157,7 +159,8 @@ const placePosFromCell = (cell: Cell | null): PlacePosData | null => {
     const s = cell.beginParse();
 
     return {
-        parent: s.loadAddress()
+        parent: s.loadAddress(),
+        pos: s.loadUint(1)
     }
 };
 

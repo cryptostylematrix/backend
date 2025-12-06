@@ -1,4 +1,4 @@
-import { Address, Cell, toNano } from "@ton/core";
+import { Address, Cell, loadComputeSkipReason, toNano } from "@ton/core";
 import { getTonClient } from "./tonClient";
 import { placesRepository, type NewPlace, type PlaceRow } from "../repositories/placesRepository";
 import { Multi, type MultiTaskCreatePlacePayload, type MultiTaskItem, type MultiTaskPayload, type MinQueueTask, MultiTaskLockPosPayload, MultiTaskUnlockPosPayload } from "../contracts/Mutli";
@@ -80,6 +80,7 @@ export class TaskProcessor {
       const taskKey = lastTask.key!;
       const taskVal= lastTask.val!;
 
+
       // For create_place or create_clone, skip if place with this task key already exists.
       if (taskVal.payload.tag === 1 || taskVal.payload.tag === 2) {
         const payload = taskVal.payload;
@@ -111,6 +112,7 @@ export class TaskProcessor {
         let parentRow: PlaceRow;
         if (payload.tag === 1 && payload.pos) {  
             const parentAddr = this.toFriendly(payload.pos.parent);
+            const pos = payload.pos.pos;
 
             await logger.info(`[TaskProcessor] fixed pos is set for create_place to addr = ${parentAddr} (task key=${taskKey}`);
 
@@ -141,6 +143,24 @@ export class TaskProcessor {
                 await logger.info('----------------------------------------------------------------------');
                 return true;
             }
+
+            if (pos==0 && fixedparent.filling == 1)
+            {
+                await logger.error(`[TaskProcessor] selected pos is already taken (task key=${taskKey})`);
+                await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+                await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+                await logger.info('----------------------------------------------------------------------');
+                return true;
+            }
+
+            if (pos==1 && fixedparent.filling == 0)
+            {
+                await logger.error(`[TaskProcessor] selected pos = 1 when 0 is empty yet (task key=${taskKey})`);
+                await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+                await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+                await logger.info('----------------------------------------------------------------------');
+                return true;
+            }
     
 
             await logger.info(`[TaskProcessor] parent position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${fixedparent.addr}`);
@@ -150,13 +170,14 @@ export class TaskProcessor {
         else
         {
             // get next pos
-            const nextPos = await findNextPos(rootPlace);
+            const locks = await locksRepository.getLocks(taskVal.m, this.toFriendly(taskVal.profile), 1, Number.MAX_SAFE_INTEGER);
+            const nextPos = await findNextPos(rootPlace, locks.items);
             if (!nextPos) {
               await logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
               return false;
             }
 
-            await logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr}`);
+            await logger.info(`[TaskProcessor] next position for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m}): address= ${nextPos.addr} pos=${nextPos.pos}`);
 
             parentRow = nextPos;
         }
@@ -199,9 +220,10 @@ export class TaskProcessor {
 
       else if (taskVal.payload.tag === 3) {
           const lockPosPayload = taskVal.payload as MultiTaskLockPosPayload;
+          const placeAddr = this.toFriendly(lockPosPayload.pos.parent);
+          const lockedPos = lockPosPayload.pos.pos;
 
-          const profileAddr = this.toFriendly(taskVal.profile);
-
+          // validation
           const profileData = await fetchProfileData(taskVal.profile);
           if (!profileData || !profileData.owner)
           {
@@ -225,41 +247,54 @@ export class TaskProcessor {
               return false;
           }
 
-          if (rootPlace.profile_addr != profileAddr)
-          {
-              await this.logLockErr("no places in the matrix", taskKey, taskVal);
-              await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-              return false;
-          }
-
-          const parentAddr = this.toFriendly(lockPosPayload.pos.parent);
-          const parentPlace = await placesRepository.getPlaceByAddress(parentAddr);
-          if (!parentPlace)
+          const placeRow = await placesRepository.getPlaceByAddress(placeAddr);
+          if (!placeRow)
           {
               await this.logLockErr("failed to get place", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
-          if (parentPlace.id == rootPlace.id)
+          if (placeRow.m != taskVal.m)
           {
-              await this.logLockErr("attemmpt to lock the root", taskKey, taskVal);
+              await this.logLockErr(`place is in the diff matrix`, taskKey, taskVal);
+              await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+              return true;
+          }
+
+          if (!placeRow.mp.startsWith(rootPlace.mp))
+          {
+              await this.logLockErr("place is in the diff subtree", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
-          if (!parentPlace.mp.startsWith(rootPlace.mp))
+          if (placeRow.filling == 0)
           {
-              await this.logLockErr("attempt to lcok beyontd structure", taskKey, taskVal);
+              await this.logLockErr("empty place", taskKey, taskVal);
+              await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+              return false;
+          }
+
+          const existingLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos);
+          if (existingLock)
+          {
+              await this.logLockErr(`duplicate lock`, taskKey, taskVal);
+              await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+              return false;
+          }
+
+          const otherPosLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos == 0 ? 1 : 0);
+          if (otherPosLock)
+          {
+              await this.logLockErr(`sibling pos is already locked`, taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
 
         
-          // todo: check for the same lock
-          // todo: prevent locking both children of the same parent
-
-          const createResult = await this.createLockFromTask(taskKey, taskVal, parentPlace);
+          // processing
+          const createResult = await this.createLockFromTask(taskKey, taskVal, placeRow, lockedPos);
 
           await this.cancelTask(rawMultiAddress, taskKey, taskVal);
        
@@ -269,9 +304,12 @@ export class TaskProcessor {
 
       else if (taskVal.payload.tag === 4) {
           const unlockPosPayload = taskVal.payload as MultiTaskUnlockPosPayload;
-
+          const placeAddr = this.toFriendly(unlockPosPayload.pos.parent);
+          const lockedPos = unlockPosPayload.pos.pos;
           const profileAddr = this.toFriendly(taskVal.profile);
 
+
+          // validation
           const profileData = await fetchProfileData(taskVal.profile);
           if (!profileData || !profileData.owner)
           {
@@ -287,7 +325,7 @@ export class TaskProcessor {
             return false;
           }
 
-          const lock = await locksRepository.getLockByPlaceAddr(this.toFriendly(unlockPosPayload.pos.parent));
+          const lock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos);
           if (!lock)
           {
               await this.logUnlockErr("lock not found", taskKey, taskVal);
@@ -424,25 +462,22 @@ export class TaskProcessor {
     return result;
   }
 
-  private async createLockFromTask(taskKey: number, taskVal: MultiTaskItem, parentPlace: PlaceRow): Promise<LockRow> {
+  private async createLockFromTask(taskKey: number, taskVal: MultiTaskItem, placeRow: PlaceRow, lockedPos: number): Promise<LockRow> {
 
     const payload = taskVal.payload;
     const taskSource = payload.tag === 1 || payload.tag === 3 || payload.tag === 4 ? this.toFriendly(payload.source) : null;
+    const mp = `${placeRow.mp}${lockedPos}`;
 
     const newLock: NewLock = {
         profile_addr: this.toFriendly(taskVal.profile),
         craeted_at: Date.now(),
 
-        m: parentPlace.m,
-        mp: parentPlace.mp,
-        place_addr: parentPlace.addr,
-        place_parent_addr: parentPlace.parent_addr,
-        place_profile_addr: parentPlace.profile_addr,
-        place_number: parentPlace.place_number,
-        place_clone: parentPlace.clone,
-        place_profile_login: parentPlace.profile_login,
-        place_index: parentPlace.index,
-        place_pos: parentPlace.pos,
+        m: placeRow.m,
+        mp: mp,
+        place_addr: placeRow.addr,
+        locked_pos: lockedPos,
+        place_profile_login: placeRow.profile_login,
+        place_number: placeRow.place_number,
 
         task_key: taskKey,
         task_query_id: Number(taskVal.query_id ?? 0),
