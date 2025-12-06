@@ -297,7 +297,7 @@ export class TaskProcessor {
 
           if (lock.profile_addr != profileAddr)
           {
-              await this.logUnlockErr("lock belonfs to another profile", taskKey, taskVal);
+              await this.logUnlockErr(`lock (id = ${lock.id}) belonfs to another profile `, taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }
