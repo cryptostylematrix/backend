@@ -281,7 +281,9 @@ export class TaskProcessor {
           {
               await this.logLockErr(`duplicate lock`, taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-              return false;
+              await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+              await logger.info('----------------------------------------------------------------------');
+              return true;
           }
 
           const otherPosLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos == 0 ? 1 : 0);
