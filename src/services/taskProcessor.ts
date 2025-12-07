@@ -276,7 +276,9 @@ export class TaskProcessor {
               return false;
           }
 
-          const existingLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos);
+          const profileAddr = this.toFriendly(taskVal.profile);
+
+          const existingLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos, profileAddr);
           if (existingLock)
           {
               await this.logLockErr(`duplicate lock`, taskKey, taskVal);
@@ -286,7 +288,7 @@ export class TaskProcessor {
               return true;
           }
 
-          const otherPosLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos == 0 ? 1 : 0);
+          const otherPosLock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos == 0 ? 1 : 0, profileAddr);
           if (otherPosLock)
           {
               await this.logLockErr(`sibling pos is already locked`, taskKey, taskVal);
@@ -327,17 +329,10 @@ export class TaskProcessor {
             return false;
           }
 
-          const lock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos);
+          const lock = await locksRepository.getLockByPlaceAddrAndLockedPos(placeAddr, lockedPos, profileAddr);
           if (!lock)
           {
               await this.logUnlockErr("lock not found", taskKey, taskVal);
-              await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-              return false;
-          }
-
-          if (lock.profile_addr != profileAddr)
-          {
-              await this.logUnlockErr(`lock (id = ${lock.id}) belonfs to another profile `, taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
               return false;
           }

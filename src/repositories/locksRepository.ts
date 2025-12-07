@@ -149,16 +149,16 @@ class LocksRepository {
     return row;
   }
 
-  async getLockByPlaceAddrAndLockedPos(place_addr: string, locked_pos: number): Promise<LockRow | null> {
+  async getLockByPlaceAddrAndLockedPos(place_addr: string, locked_pos: number, profile_addr: string): Promise<LockRow | null> {
   const result = await this.client.query<LockRow>(
     `SELECT 
         id, mp, m, profile_addr, 
         place_addr, locked_pos, 
         place_profile_login, place_number, craeted_at
      FROM multi_locks2
-     WHERE place_addr = $1 AND locked_pos = $2
+     WHERE place_addr = $1 AND locked_pos = $2 AND profile_addr = $3
      LIMIT 1`,
-    [place_addr, locked_pos],
+    [place_addr, locked_pos, profile_addr],
   );
 
   const row = result.rows[0] ?? null;
