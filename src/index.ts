@@ -141,7 +141,7 @@ app.get("/api/matrix/:m/:profile_addr/next-pos", async (req, res) => {
     return res.status(404).json({ error: "Root place not found" });
   }
 
-  const locks = await locksRepository.getLocks(rootRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
+  const locks = await locksRepository.getLocks(rootRow.m, rootRow.profile_addr, 1, Number.MAX_SAFE_INTEGER);
   const nextPos = await findNextPos(rootRow, locks.items);
   if (!nextPos) {
     return res.status(404).json({ error: "Next position not found" });
@@ -357,9 +357,9 @@ app.get("/api/matrix/:profile_addr/tree/:place_addr", async (req, res) => {
     return res.status(404).json({ error: "Root not found" });
   }
 
-  const locksResult = await locksRepo.getLocks(selectedRow.m, profile_addr, 1, Number.MAX_SAFE_INTEGER);
+  const locksResult = await locksRepo.getLocks(rootRow.m, rootRow.profile_addr, 1, Number.MAX_SAFE_INTEGER);
 
-  const nextPosRow = await findNextPos(selectedRow, locksResult.items);
+  const nextPosRow = await findNextPos(rootRow, locksResult.items);
   if (!nextPosRow) {
     return res.status(404).json({ error: "Next position not found" });
   }

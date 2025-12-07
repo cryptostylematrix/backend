@@ -170,7 +170,7 @@ export class TaskProcessor {
         else
         {
             // get next pos
-            const locks = await locksRepository.getLocks(taskVal.m, this.toFriendly(taskVal.profile), 1, Number.MAX_SAFE_INTEGER);
+            const locks = await locksRepository.getLocks(rootPlace.m, rootPlace.profile_addr, 1, Number.MAX_SAFE_INTEGER);
             const nextPos = await findNextPos(rootPlace, locks.items);
             if (!nextPos) {
               await logger.error(`[TaskProcessor] next position not found for profile ${this.toFriendly(taskVal.profile)} (m=${taskVal.m})`);
