@@ -55,7 +55,7 @@ export class TaskProcessor {
 
       this.timer = setTimeout(() => {
         void runOnce();
-      }, 10000);
+      }, 3000);
     };
 
     // Run immediately, then schedule subsequent runs after each completes.
