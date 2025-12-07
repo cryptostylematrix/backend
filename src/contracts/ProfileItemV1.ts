@@ -12,8 +12,13 @@ export type ProfileItemV1Config = {
     programs:  Dictionary<number, ProgramData> | undefined // cell programs (optional)
 };
 
-
-
+export type ProfileItemData = {
+    isInit: boolean;
+    index: bigint;
+    collection: Address;
+    owner: Address | null;
+    content: Cell | null;
+}
 
 
 export function profileItemV1ConfigToCell(config: ProfileItemV1Config): Cell {
@@ -218,7 +223,7 @@ export class ProfileItemV1 implements Contract {
         });
     }
 
-    async getNftData(provider: ContractProvider) {
+    async getNftData(provider: ContractProvider): Promise<ProfileItemData> {
         const { stack } = await provider.get('get_nft_data', []);
 
         return {

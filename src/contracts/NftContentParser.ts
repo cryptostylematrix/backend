@@ -3,7 +3,7 @@ import { sha256_sync } from "@ton/crypto";
 import { NFTDictValueSerializer } from "./dict";
 import { logger } from "../logger";
 
-export type ProfileData = {
+export type ProfileContent = {
   login: string;
   imageUrl?: string;
   firstName?: string;
@@ -66,9 +66,7 @@ const extractAttributes = (raw?: string) => {
   }
 };
 
-export const parseProfileFromNftContent = (
-  content: Cell | null,
-): ProfileData | null => {
+export const parseProfileContent = (content: Cell | null | undefined) : ProfileContent | null => {
   if (!content) {
     return null;
   }

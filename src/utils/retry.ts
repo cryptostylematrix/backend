@@ -2,7 +2,7 @@ import { logger } from "../logger";
 
 export async function retry<T>(
   fn: () => Promise<T>,
-  retries = 3,
+  retries = 5,
   delay = 300
 ): Promise<T> {
   try {
@@ -17,7 +17,7 @@ export async function retry<T>(
 
 export async function retryExp<T>(
   fn: () => Promise<T>,
-  retries = 3,
+  retries = 5,
   baseDelay = 300 // initial delay
 ): Promise<T> {
   let attempt = 0;

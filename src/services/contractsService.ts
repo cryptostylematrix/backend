@@ -1,16 +1,17 @@
 import { Address, Cell, Dictionary, internal } from "@ton/core";
 import { MultiPlace, type MultiPlaceData } from "../contracts/MultiPlace";
-import { ProfileItemV1, ProgramDataCodec, type ProgramData } from "../contracts/ProfileItemV1";
+import { ProfileItemData, ProfileItemV1, ProgramDataCodec, type ProgramData } from "../contracts/ProfileItemV1";
 import { Programs } from "../contracts/MultiConstants";
 import { MultiInvite } from "../contracts/MultiInvite";
-import { parseProfileFromNftContent, type ProfileData } from "../contracts/NftContentParser";
-import { getTonClient } from "./tonClient";
+import { getTonClient, limited } from "./tonClient";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 import { WalletContractV4, type OpenedContract } from "@ton/ton";
 import { tonConfig } from "../config";
 import { retryExp } from "../utils/retry";
 import { MinQueueTask, Multi } from "../contracts/Mutli";
 import { logger } from "../logger";
+import { parseProfileContent, ProfileContent } from "../contracts/NftContentParser";
+
 
 export const fetchPlaceData = async (placeAddr: string): Promise<MultiPlaceData | null> => {
   const client = getTonClient();
@@ -18,9 +19,8 @@ export const fetchPlaceData = async (placeAddr: string): Promise<MultiPlaceData 
   const contract = MultiPlace.createFromAddress(address);
   const provider = client.provider(address);
 
-
-
-  return contract.getPlaceData(provider);
+  const placeData = await retryExp(() => limited(() => contract.getPlaceData(provider)));
+  return placeData;
 };
 
 export const fetchMultiProgram = async (profileAddr: Address): Promise<ProgramData | null> => {
@@ -28,7 +28,7 @@ export const fetchMultiProgram = async (profileAddr: Address): Promise<ProgramDa
   const profile = ProfileItemV1.createFromAddress(profileAddr);
   const provider = client.provider(profileAddr);
 
-  const profileData = await retryExp(() => profile.getPrograms(provider), 5, 300);
+  const profileData = await retryExp(() => limited(() => profile.getPrograms(provider)));
 
   if (!profileData.programs) {
     return null;
@@ -39,6 +39,7 @@ export const fetchMultiProgram = async (profileAddr: Address): Promise<ProgramDa
     ProgramDataCodec,
     profileData.programs,
   );
+
   return programs.get(Programs.multi) ?? null;
 };
 
@@ -51,12 +52,10 @@ export const fetchInviterProfileAddr = async (profileAddr: Address): Promise<Add
   const inviterContract = MultiInvite.createFromAddress(programData.inviter);
   const provider = getTonClient().provider(programData.inviter);
 
-  const inviterData = await retryExp(() => inviterContract.getInviteData(provider), 5, 300);
+  const inviterData = await retryExp(() => limited(() => inviterContract.getInviteData(provider)));
 
   const inviterProfile = inviterData.owner?.owner;
-  return inviterProfile
-    ? inviterProfile
-    : null;
+  return inviterProfile ?? null;
 };
 
 export const fetchLastTask = async (rawMultiAddress: string): Promise<MinQueueTask | null> => {
@@ -66,40 +65,27 @@ export const fetchLastTask = async (rawMultiAddress: string): Promise<MinQueueTa
   const multi = Multi.createFromAddress(multiAddress);
   const provider = client.provider(multiAddress);
 
-  const lastTask = await retryExp(() => multi.getMinQueueTask(provider), 5,  300);
+  const lastTask = await retryExp(() => limited(() => multi.getMinQueueTask(provider)));
+
   return lastTask;
 };
 
-export const fetchProfileContent = async (profileAddr: Address): Promise<ProfileData | null> => {
-  const client = getTonClient();
-  const profile = ProfileItemV1.createFromAddress(profileAddr);
-  const provider = client.provider(profileAddr);
-
-  const profileData = await retryExp(() => profile.getNftData(provider), 5,  300);
-  return parseProfileFromNftContent(profileData.content);
+export const fetchProfileContent = async (profileAddr: Address): Promise<ProfileContent | null> => {
+  const profileData = await fetchProfileData(profileAddr);
+  return parseProfileContent(profileData?.content);
 };
 
-export const fetchProfileData = async (profileAddr: Address): Promise<{
-    isInit: boolean;
-    index: bigint;
-    collection: Address;
-    owner: Address | null;
-    content: Cell | null;
-} | null> => {
+export const fetchProfileData = async (profileAddr: Address): Promise<ProfileItemData | null> => {
   const client = getTonClient();
   const profile = ProfileItemV1.createFromAddress(profileAddr);
   const provider = client.provider(profileAddr);
 
-  const profileData = await retryExp(() => profile.getNftData(provider), 5,  300);
+  const profileData = await retryExp(() => limited(() => profile.getNftData(provider)));
+
   return profileData;
 };
 
-export const waitForNewChild = async (
-  placeAddr: string,
-  prevData: MultiPlaceData | null,
-  timeoutMs = 120000,
-  intervalMs = 1000,
-): Promise<string | null> => {
+export const waitForNewChild = async (placeAddr: string, prevData: MultiPlaceData | null, timeoutMs = 120000, intervalMs = 1000,): Promise<string | null> => {
   const start = Date.now();
   const prevFill = prevData?.fill_count ?? 0;
   const prevLeft = prevData?.children?.left?.toString({ urlSafe: true, bounceable: true, testOnly: false });
@@ -107,7 +93,7 @@ export const waitForNewChild = async (
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const current = await retryExp(() => fetchPlaceData(placeAddr), 5,  300);
+    const current = await fetchPlaceData(placeAddr);
 
     if (current) {
       const currLeft = current.children?.left?.toString({ urlSafe: true, bounceable: true, testOnly: false });
@@ -132,36 +118,25 @@ export const waitForNewChild = async (
 
 let lastPaidTaskKey: number | null = null;
 
-export const waitForSeqno = async (
-  wallet: OpenedContract<WalletContractV4>,
-  prevSeqno: number,
-  timeoutMs = 30000,
-  intervalMs = 1000,
-): Promise<void> => {
+export const waitForSeqno = async (wallet: OpenedContract<WalletContractV4>, prevSeqno: number, timeoutMs = 30000, intervalMs = 1000): Promise<void> => {
   const start = Date.now();
-  // eslint-disable-next-line no-constant-condition
   while (true) {
-    const current = await retryExp(() => wallet.getSeqno(), 5,  300);
+    const current = await retryExp(() => limited(() => wallet.getSeqno()));
 
     if (current > prevSeqno) {
       return;
     }
+
     if (Date.now() - start > timeoutMs) {
       throw new Error("Timeout waiting for wallet seqno to increment");
     }
+
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 };
 
-export const sendPaymentToMulti = async (
-  toAddress: string,
-  taskKey: number,
-  body: Cell,
-  value: bigint,
-): Promise<void> => {
-  if (lastPaidTaskKey === taskKey) {
-    return;
-  }
+export const sendPaymentToMulti = async (toAddress: string, taskKey: number, body: Cell, value: bigint): Promise<void> => {
+  if (lastPaidTaskKey === taskKey) return;
 
   const client = getTonClient();
   const keyPair = await mnemonicToPrivateKey(tonConfig.processorMnemonic.trim().split(/\s+/));
@@ -169,7 +144,7 @@ export const sendPaymentToMulti = async (
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
   const openedWallet = client.open(wallet);
 
-  const seqno = await retryExp(() => openedWallet.getSeqno(), 5,  300);
+  const seqno = await retryExp(() => limited(() => openedWallet.getSeqno()));
 
   await openedWallet.sendTransfer({
     seqno,
@@ -186,23 +161,16 @@ export const sendPaymentToMulti = async (
 
   await waitForSeqno(openedWallet, seqno);
   lastPaidTaskKey = taskKey;
- 
 };
 
-
-export const waitForTaskCanceled = async (
-  rawMultiAddress: string,
-  prevKey: number,
-  timeoutMs = 120000,
-  intervalMs = 1000,
-): Promise<number | null> => {
+export const waitForTaskCanceled = async (rawMultiAddress: string, prevKey: number, timeoutMs = 120000, intervalMs = 1000): Promise<number | null> => {
   const start = Date.now();
   
   // eslint-disable-next-line no-constant-condition
   let attempt = 0;
   while (true) {
 
-    const current = await retryExp(() => fetchLastTask(rawMultiAddress), 5,  300);
+    const current = await fetchLastTask(rawMultiAddress);
     await logger.info(`[TaskProcessor] waiting until task canceled prev = ${prevKey}  current= ${current?.key} (attepmt = ${++attempt}) ...`);
 
     if (current) {
