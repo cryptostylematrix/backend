@@ -334,7 +334,9 @@ export class TaskProcessor {
           {
               await this.logUnlockErr("lock not found", taskKey, taskVal);
               await this.cancelTask(rawMultiAddress, taskKey, taskVal);
-              return false;
+              await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+              await logger.info('----------------------------------------------------------------------');
+              return true;
           }
 
           await this.cancelTask(rawMultiAddress, taskKey, taskVal);
