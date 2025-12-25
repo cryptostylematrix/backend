@@ -33,20 +33,20 @@ services:
       - "5342:5341"            # Ingestion endpoint
     volumes:
       - seq-data:/data
-
-    rabbitmq:
-      image: rabbitmq:3-management
-      container_name: rabbitmq
-      restart: unless-stopped
-      ports:
-        - "5672:5672"    # AMQP
-        - "15672:15672"  # Management UI
-      environment:
-          RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
-          RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-          RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
-      volumes:
-        - rabbitmq-data:/var/lib/rabbitmq
+      
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
 
 volumes:
   seq-data:
