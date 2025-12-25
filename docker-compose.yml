@@ -8,9 +8,17 @@ services:
     restart: "no"
     depends_on:
       - seq
+      - rabbitmq
     environment:
       SEQ_URL: "http://seq:5341"
       SEQ_API_KEY: "${SEQ_API_KEY}"
+
+      # RabbitMQ
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST}
 
   seq:
     image: datalust/seq:latest
@@ -26,5 +34,20 @@ services:
     volumes:
       - seq-data:/data
 
+    rabbitmq:
+      image: rabbitmq:3-management
+      container_name: rabbitmq
+      restart: unless-stopped
+      ports:
+        - "5672:5672"    # AMQP
+        - "15672:15672"  # Management UI
+      environment:
+          RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+          RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+          RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+      volumes:
+        - rabbitmq-data:/var/lib/rabbitmq
+
 volumes:
   seq-data:
+  rabbitmq-data:
