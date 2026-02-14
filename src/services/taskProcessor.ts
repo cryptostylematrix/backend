@@ -126,6 +126,15 @@ export class TaskProcessor {
                 return true;
             }
 
+            if (fixedparent.filling >= 2)
+            {
+                await logger.error(`[TaskProcessor] fixedparent is full (task key=${taskKey})`);
+                await this.cancelTask(rawMultiAddress, taskKey, taskVal);
+                await logger.info(`[TaskProcessor] last task key=${taskKey} successfully processed`);
+                await logger.info('----------------------------------------------------------------------');
+                return true;
+            }
+
             if (fixedparent.m != taskVal.m)
             {
                 await logger.error(`[TaskProcessor] fixedparent is in the different matrix (task key=${taskKey})`);
