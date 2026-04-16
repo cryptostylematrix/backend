@@ -26,6 +26,8 @@ const WATCHED_MULTI_ADDRESS: string = tonConfig.multiQueueAddress;
 export class TaskProcessor {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private lastProcessedTaskKey: number | null = null;
+  private lastProcessedTaskKeyAttempts = 0;
 
   async run(): Promise<void> {
     if (this.timer) {
@@ -79,6 +81,26 @@ export class TaskProcessor {
 
       const taskKey = lastTask.key!;
       const taskVal= lastTask.val!;
+
+      if (!this.lastProcessedTaskKey || this.lastProcessedTaskKey != taskKey) {
+        this.lastProcessedTaskKey = taskKey;
+        this.lastProcessedTaskKeyAttempts = 0;
+      } else {
+        this.lastProcessedTaskKeyAttempts += 1;
+
+        const attempt = this.lastProcessedTaskKeyAttempts;
+        const maxAttempts = 5;
+        const waitMs = 2000 * (2 ** (attempt - 1));
+
+        if (attempt < maxAttempts) {
+          await logger.info(`[TaskProcessor] lastTaskKey=${taskKey} has not updated yet (attempt ${attempt}/${maxAttempts}), waiting ${waitMs / 1000}s`);
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          return true;
+        }
+
+        await logger.error(`[TaskProcessor] lastTaskKey=${taskKey} eventually not updated (attempt ${attempt}/${maxAttempts})`);
+        return false;
+      }
 
 
       // For create_place or create_clone, skip if place with this task key already exists.
