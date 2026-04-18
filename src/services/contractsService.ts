@@ -146,7 +146,7 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
 
   const seqno = await retryExp(() => limited(() => openedWallet.getSeqno()));
 
-  await openedWallet.sendTransfer({
+  const transfer = {
     seqno,
     secretKey: keyPair.secretKey,
     messages: [
@@ -157,7 +157,9 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
         bounce: true,
       }),
     ],
-  });
+  };
+
+  await retryExp(() => limited(() => openedWallet.sendTransfer(transfer)));
 
   await waitForSeqno(openedWallet, seqno);
   lastPaidTaskKey = taskKey;
