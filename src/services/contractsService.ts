@@ -159,7 +159,15 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
     ],
   };
 
-  await retryExp(() => limited(() => openedWallet.sendTransfer(transfer)));
+  await retryExp(async () => {
+    try {
+      await limited(() => openedWallet.sendTransfer(transfer));
+    } catch (error) {
+      const currentSeqno = await retryExp(() => limited(() => openedWallet.getSeqno()), 2, 300);
+      await logger.warn(`[TON] sendTransfer failed, seqno=${seqno}, currentSeqno=${currentSeqno}, retrying with the same seqno`);
+      throw error;
+    }
+  });
 
   await waitForSeqno(openedWallet, seqno);
   lastPaidTaskKey = taskKey;
