@@ -161,6 +161,7 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
 
   await retryExp(async () => {
     try {
+      await logger.info(`[TON] trying sendTransfer with seqno=${seqno}`);
       await limited(() => openedWallet.sendTransfer(transfer));
     } catch (error) {
       const currentSeqno = await retryExp(() => limited(() => openedWallet.getSeqno()), 2, 300);
