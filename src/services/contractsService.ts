@@ -117,14 +117,15 @@ export const waitForNewChild = async (placeAddr: string, prevData: MultiPlaceDat
 };
 
 let lastPaidTaskKey: number | null = null;
+let lastKnownSeqno: number | null = null;
 
-export const waitForSeqno = async (wallet: OpenedContract<WalletContractV4>, prevSeqno: number, timeoutMs = 30000, intervalMs = 1000): Promise<void> => {
+export const waitForSeqno = async (wallet: OpenedContract<WalletContractV4>, prevSeqno: number, timeoutMs = 30000, intervalMs = 1000): Promise<number> => {
   const start = Date.now();
   while (true) {
     const current = await retryExp(() => limited(() => wallet.getSeqno()));
 
     if (current > prevSeqno) {
-      return;
+      return current;
     }
 
     if (Date.now() - start > timeoutMs) {
@@ -144,7 +145,7 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
   const openedWallet = client.open(wallet);
 
-  const seqno = await retryExp(() => limited(() => openedWallet.getSeqno()));
+  const seqno = lastKnownSeqno ?? await retryExp(() => limited(() => openedWallet.getSeqno()));
 
   const transfer = {
     seqno,
@@ -170,7 +171,7 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
     }
   });
 
-  await waitForSeqno(openedWallet, seqno);
+  lastKnownSeqno = await waitForSeqno(openedWallet, seqno);
   lastPaidTaskKey = taskKey;
 };
 
