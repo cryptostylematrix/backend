@@ -3,7 +3,7 @@ import { MultiPlace, type MultiPlaceData } from "../contracts/MultiPlace";
 import { ProfileItemData, ProfileItemV1, ProgramDataCodec, type ProgramData } from "../contracts/ProfileItemV1";
 import { Programs } from "../contracts/MultiConstants";
 import { MultiInvite } from "../contracts/MultiInvite";
-import { getTonClient, limited } from "./tonClient";
+import { getTonClient, limited, tonCall } from "./tonClient";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 import { WalletContractV4, type OpenedContract } from "@ton/ton";
 import { tonConfig } from "../config";
@@ -19,7 +19,7 @@ export const fetchPlaceData = async (placeAddr: string): Promise<MultiPlaceData 
   const contract = MultiPlace.createFromAddress(address);
   const provider = client.provider(address);
 
-  const placeData = await retryExp(() => limited(() => contract.getPlaceData(provider)));
+  const placeData = await tonCall(() => contract.getPlaceData(provider));
   return placeData;
 };
 
@@ -28,7 +28,7 @@ export const fetchMultiProgram = async (profileAddr: Address): Promise<ProgramDa
   const profile = ProfileItemV1.createFromAddress(profileAddr);
   const provider = client.provider(profileAddr);
 
-  const profileData = await retryExp(() => limited(() => profile.getPrograms(provider)));
+  const profileData = await tonCall(() => profile.getPrograms(provider));
 
   if (!profileData.programs) {
     return null;
@@ -52,7 +52,7 @@ export const fetchInviterProfileAddr = async (profileAddr: Address): Promise<Add
   const inviterContract = MultiInvite.createFromAddress(programData.inviter);
   const provider = getTonClient().provider(programData.inviter);
 
-  const inviterData = await retryExp(() => limited(() => inviterContract.getInviteData(provider)));
+  const inviterData = await tonCall(() => inviterContract.getInviteData(provider));
 
   const inviterProfile = inviterData.owner?.owner;
   return inviterProfile ?? null;
@@ -65,7 +65,7 @@ export const fetchLastTask = async (rawMultiAddress: string): Promise<MinQueueTa
   const multi = Multi.createFromAddress(multiAddress);
   const provider = client.provider(multiAddress);
 
-  const lastTask = await retryExp(() => limited(() => multi.getMinQueueTask(provider)));
+  const lastTask = await tonCall(() => multi.getMinQueueTask(provider));
 
   return lastTask;
 };
@@ -80,7 +80,7 @@ export const fetchProfileData = async (profileAddr: Address): Promise<ProfileIte
   const profile = ProfileItemV1.createFromAddress(profileAddr);
   const provider = client.provider(profileAddr);
 
-  const profileData = await retryExp(() => limited(() => profile.getNftData(provider)));
+  const profileData = await tonCall(() => profile.getNftData(provider));
 
   return profileData;
 };
@@ -122,7 +122,7 @@ let lastKnownSeqno: number | null = null;
 export const waitForSeqno = async (wallet: OpenedContract<WalletContractV4>, prevSeqno: number, timeoutMs = 30000, intervalMs = 1000): Promise<number> => {
   const start = Date.now();
   while (true) {
-    const current = await retryExp(() => limited(() => wallet.getSeqno()));
+    const current = await tonCall(() => wallet.getSeqno());
 
     if (current > prevSeqno) {
       return current;
@@ -145,7 +145,7 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
   const openedWallet = client.open(wallet);
 
-  const seqno = lastKnownSeqno ?? await retryExp(() => limited(() => openedWallet.getSeqno()));
+  const seqno = lastKnownSeqno ?? await tonCall(() => openedWallet.getSeqno());
 
   const transfer = {
     seqno,
@@ -165,7 +165,7 @@ export const sendPaymentToMulti = async (toAddress: string, taskKey: number, bod
       await logger.info(`[TON] trying sendTransfer with seqno=${seqno}`);
       await limited(() => openedWallet.sendTransfer(transfer));
     } catch (error) {
-      const currentSeqno = await retryExp(() => limited(() => openedWallet.getSeqno()));
+      const currentSeqno = await tonCall(() => openedWallet.getSeqno());
       await logger.warn(`[TON] sendTransfer failed, seqno=${seqno}, currentSeqno=${currentSeqno}, retrying with the same seqno`);
       throw error;
     }

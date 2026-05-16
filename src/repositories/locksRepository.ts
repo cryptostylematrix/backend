@@ -1,6 +1,5 @@
 import { type Pool } from "pg";
 import { pool } from "./db";
-import { logger } from "../logger";
 
 export type LockRow = {
   id: number;

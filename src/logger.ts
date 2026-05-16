@@ -1,6 +1,8 @@
 import axios from "axios";
 import { seqConfig } from "./config";
 
+const isLocal = process.env.NODE_ENV !== "production";
+
 // Define allowed Seq log levels
 export type SeqLevel =
   | "Fatal"
@@ -9,6 +11,38 @@ export type SeqLevel =
   | "Information"
   | "Debug"
   | "Verbose";
+
+function logToConsole(
+  level: SeqLevel,
+  message: string,
+  properties: Record<string, any> = {}
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+  const logArgs = [`${timestamp} [${level}] ${message}`];
+
+  if (Object.keys(properties).length > 0) {
+    logArgs.push(JSON.stringify(properties));
+  }
+
+  switch (level) {
+    case "Fatal":
+    case "Error":
+      console.error(...logArgs);
+      break;
+    case "Warning":
+      console.warn(...logArgs);
+      break;
+    case "Debug":
+    case "Verbose":
+      console.debug(...logArgs);
+      break;
+    default:
+      console.info(...logArgs);
+      break;
+  }
+
+  return Promise.resolve();
+}
 
 // Logging function (fully typed)
 async function sendToSeq(
@@ -35,29 +69,41 @@ async function sendToSeq(
   }
 }
 
+function writeLog(
+  level: SeqLevel,
+  message: string,
+  properties: Record<string, any> = {}
+): Promise<void> {
+  if (isLocal) {
+    return logToConsole(level, message, properties);
+  }
+
+  return sendToSeq(level, message, properties);
+}
+
 // Public logger API
 export const logger = {
   info(message: string, props?: Record<string, any>) {
-    return sendToSeq("Information", message, props);
+    return writeLog("Information", message, props);
   },
 
   warn(message: string, props?: Record<string, any>) {
-    return sendToSeq("Warning", message, props);
+    return writeLog("Warning", message, props);
   },
 
   error(message: string, props?: Record<string, any>) {
-    return sendToSeq("Error", message, props);
+    return writeLog("Error", message, props);
   },
 
   debug(message: string, props?: Record<string, any>) {
-    return sendToSeq("Debug", message, props);
+    return writeLog("Debug", message, props);
   },
 
   fatal(message: string, props?: Record<string, any>) {
-    return sendToSeq("Fatal", message, props);
+    return writeLog("Fatal", message, props);
   },
 
   verbose(message: string, props?: Record<string, any>) {
-    return sendToSeq("Verbose", message, props);
+    return writeLog("Verbose", message, props);
   },
 };

@@ -1,6 +1,7 @@
 import { TonClient } from "@ton/ton";
 import { tonConfig } from "../config";
 import Bottleneck from "bottleneck";
+import { retryExp } from "../utils/retry";
 
 let tonClient: TonClient | null = null;
 
@@ -15,6 +16,10 @@ const limiter = new Bottleneck({
 // A helper that schedules TON calls through limiter
 export const limited = <T>(fn: () => Promise<T>): Promise<T> => {
   return limiter.schedule(fn);
+};
+
+export const tonCall = <T>(fn: () => Promise<T>): Promise<T> => {
+  return retryExp(() => limited(fn));
 };
 
 export const getTonClient = (): TonClient => {

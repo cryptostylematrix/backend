@@ -1,6 +1,5 @@
 import { type Pool } from "pg";
 import { pool } from "./db";
-import { logger } from "../logger";
 
 export type NewPlace = {
   m: number;
@@ -40,55 +39,8 @@ export type PlaceRow = {
   index: string;
 };
 
-const getPlacesCount = async (client: Pool, m: number, profile_addr: string): Promise<number> => {
-  const countResult = await client.query<{ count: string }>(
-    `SELECT COUNT(*)::bigint AS count FROM multi_places WHERE m = $1 AND profile_addr = $2`,
-    [m, profile_addr],
-  );
-  return Number(countResult.rows[0]?.count ?? 0);
-};
-
-const getRootMp = async (client: Pool, m: number, profile_addr: string): Promise<string | null> => {
-  const root = await client.query<{ mp: string }>(
-    `SELECT mp FROM multi_places WHERE m = $1 AND profile_addr = $2 AND place_number = 1 LIMIT 1`,
-    [m, profile_addr],
-  );
-  return root.rows[0]?.mp ?? null;
-};
-
 class PlacesRepository {
   constructor(private readonly client: Pool) {}
-
-  async getPlaces(
-    m: number,
-    profile_addr: string,
-    page: number,
-    pageSize: number,
-  ): Promise<{ items: PlaceRow[]; total: number }> {
-    const safePage = page > 0 ? page : 1;
-    const safePageSize = pageSize > 0 ? pageSize : 10;
-
-    const total = await getPlacesCount(this.client, m, profile_addr);
-    if (total === 0) {
-      return { items: [], total: 0 };
-    }
-
-    const query = {
-      text: `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
-             FROM multi_places
-             WHERE m = $1 AND profile_addr = $2
-             ORDER BY place_number ASC
-             LIMIT $3 OFFSET $4`,
-      values: [m, profile_addr, safePageSize, (safePage - 1) * safePageSize],
-    };
-
-    const result = await this.client.query<PlaceRow>(query);
-    return { items: result.rows, total };
-  }
-
-  getPlacesCount(m: number, profile_addr: string): Promise<number> {
-    return getPlacesCount(this.client, m, profile_addr);
-  }
 
   async getRootPlace(m: number, profile_addr: string): Promise<PlaceRow | null> {
     const result = await this.client.query<PlaceRow>(
@@ -147,47 +99,6 @@ class PlacesRepository {
     return row;
   }
 
-  async searchPlaces(
-    m: number,
-    profile_addr: string,
-    query: string,
-    page: number,
-    pageSize: number,
-  ): Promise<{ items: PlaceRow[]; total: number }> {
-    const rootMp = await getRootMp(this.client, m, profile_addr);
-    if (!rootMp) {
-      return { items: [], total: 0 };
-    }
-
-    const prefix = `${rootMp}%`;
-    const indexPrefix = `${query}%`;
-
-    const totalResult = await this.client.query<{ count: string }>(
-      `SELECT COUNT(*)::bigint AS count
-       FROM multi_places
-       WHERE m = $1 AND mp LIKE $2 AND index LIKE $3`,
-      [m, prefix, indexPrefix],
-    );
-    const total = Number(totalResult.rows[0]?.count ?? 0);
-    if (total === 0) {
-      return { items: [], total: 0 };
-    }
-
-    const safePage = page > 0 ? page : 1;
-    const safePageSize = pageSize > 0 ? pageSize : 10;
-    const queryConfig = {
-      text: `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
-             FROM multi_places
-             WHERE m = $1 AND mp LIKE $2 AND index LIKE $3
-             ORDER BY index ASC
-             LIMIT $4 OFFSET $5`,
-      values: [m, prefix, indexPrefix, safePageSize, (safePage - 1) * safePageSize],
-    };
-
-    const result = await this.client.query<PlaceRow>(queryConfig);
-    return { items: result.rows, total };
-  }
-
   async getPlaceByAddress(place_addr: string): Promise<PlaceRow | null> {
     const result = await this.client.query<PlaceRow>(
       `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
@@ -195,68 +106,6 @@ class PlacesRepository {
        WHERE addr = $1
        LIMIT 1`,
       [place_addr],
-    );
-
-    return result.rows[0] ?? null;
-  }
-
-  async getPlaceCount(m: number, mpPrefix: string): Promise<number> {
-    return this.getPlacesCountByMpPrefix(m, mpPrefix);
-  }
-
-  async getPlacesCountByMpPrefix(m: number, mpPrefix: string): Promise<number> {
-    const countResult = await this.client.query<{ count: string }>(
-      `SELECT COUNT(*)::bigint AS count
-       FROM multi_places
-       WHERE m = $1 AND mp LIKE $2`,
-      [m, `${mpPrefix}%`],
-    );
-    const count = Number(countResult.rows[0]?.count ?? 0);
-    return count > 0 ? count : 0;
-  }
-
-  async getPlacesByMpPrefix(
-    m: number,
-    mpPrefix: string,
-    depthLevels: number,
-    page: number,
-    pageSize: number,
-  ): Promise<{ items: PlaceRow[]; total: number }> {
-    const maxLength = mpPrefix.length + depthLevels;
-    const safePage = page > 0 ? page : 1;
-    const safePageSize = pageSize > 0 ? pageSize : 10;
-
-    const countResult = await this.client.query<{ count: string }>(
-      `SELECT COUNT(*)::bigint AS count
-       FROM multi_places
-       WHERE m = $1 AND mp LIKE $2 AND length(mp) <= $3`,
-      [m, `${mpPrefix}%`, maxLength],
-    );
-    const total = Number(countResult.rows[0]?.count ?? 0);
-
-    if (total === 0) {
-      return { items: [], total: 0 };
-    }
-
-    const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
-       FROM multi_places
-       WHERE m = $1 AND mp LIKE $2 AND length(mp) <= $3
-       ORDER BY length(mp) ASC, mp ASC
-       LIMIT $4 OFFSET $5`,
-      [m, `${mpPrefix}%`, maxLength, safePageSize, (safePage - 1) * safePageSize],
-    );
-
-    return { items: result.rows, total };
-  }
-
-  async getPlaceByMp(m: number, mp: string): Promise<PlaceRow | null> {
-    const result = await this.client.query<PlaceRow>(
-      `SELECT id, parent_id, m, mp, pos, addr, parent_addr, profile_addr, inviter_profile_addr, place_number, craeted_at, filling, filling2, clone, profile_login, index
-       FROM multi_places
-       WHERE m = $1 AND mp = $2
-       LIMIT 1`,
-      [m, mp],
     );
 
     return result.rows[0] ?? null;
