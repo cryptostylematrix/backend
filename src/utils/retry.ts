@@ -17,8 +17,8 @@ export async function retry<T>(
 
 export async function retryExp<T>(
   fn: () => Promise<T>,
-  retries = 5,
-  baseDelay = 300 // initial delay
+  retries = 10,
+  baseDelay = 2000 // initial delay
 ): Promise<T> {
   let attempt = 0;
 

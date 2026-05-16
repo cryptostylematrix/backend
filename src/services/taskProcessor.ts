@@ -1,8 +1,7 @@
-import { Address, Cell, loadComputeSkipReason, toNano } from "@ton/core";
-import { getTonClient } from "./tonClient";
+import { Address, toNano } from "@ton/core";
 import { placesRepository, type NewPlace, type PlaceRow } from "../repositories/placesRepository";
-import { Multi, type MultiTaskCreatePlacePayload, type MultiTaskItem, type MultiTaskPayload, type MinQueueTask, MultiTaskLockPosPayload, MultiTaskUnlockPosPayload } from "../contracts/Mutli";
-import { type MultiPlaceData, type MultiPlaceProfilesData } from "../contracts/MultiPlace";
+import { Multi, type MultiTaskItem, MultiTaskLockPosPayload, MultiTaskUnlockPosPayload } from "../contracts/Mutli";
+import { type MultiPlaceProfilesData } from "../contracts/MultiPlace";
 import { tonConfig } from "../config";
 import {
   fetchInviterProfileAddr,
